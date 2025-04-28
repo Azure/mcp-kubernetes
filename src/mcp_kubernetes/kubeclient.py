@@ -88,8 +88,6 @@ def setup_client():
         config.load_incluster_config()
     return client
 
-@k8sapi.tool("Get-k8s-Object",
-        "Fetch any Kubernetes object (or list) as JSON string. Pass name="" to list the collection and namespace="" to get the resource in all namespaces.")
 async def get(
     kind: Annotated[str, Field(description="The kubernetes resource kind")], 
     name: Annotated[str, Field(description="The kubernetes resource name, list all of resources if empty")] = "", 

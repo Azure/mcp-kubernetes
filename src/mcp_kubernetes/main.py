@@ -2,7 +2,7 @@
 import argparse
 from fastmcp import FastMCP
 import logging
-from .kubeclient import setup_client, k8sapi
+from .kubeclient import setup_client, get
 from .command import  helm
 from .security import security_config
 
@@ -90,7 +90,7 @@ def server():
     add_kubectl_tools()
 
     # Setup tools
-    mcp.mount("k8sapi",k8sapi)
+    mcp.add_tool(get, name="Get-k8s-Object", description="Fetch any Kubernetes object (or list) as JSON string. Pass name='' to list the collection and namespace='' to get the resource in all namespaces.")
     if not args.disable_helm:
         mcp.tool("Run-helm-command","Run helm command and get result, The command should start with helm")(helm)
 
