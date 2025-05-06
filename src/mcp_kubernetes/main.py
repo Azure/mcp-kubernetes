@@ -3,14 +3,16 @@ import argparse
 from fastmcp import FastMCP
 import logging
 from .kubeclient import setup_client
-from .command import helm
-from .config import config
+from .config import config, SecurityConfig
 
 
 from .tool_registry import (
     KUBECTL_READ_ONLY_TOOLS,
     KUBECTL_RW_TOOLS,
     KUBECTL_ADMIN_TOOLS,
+    HELM_READ_ONLY_TOOLS,
+    HELM_RW_TOOLS,
+    HELM_ADMIN_TOOLS,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("mcp-kubernetes")
 
 
-def add_kubectl_tools():
+def add_kubectl_tools(config: SecurityConfig):
     # Register read-only functions
     for func in KUBECTL_READ_ONLY_TOOLS:
         logger.debug(f"Registering kubectl function: {func.__name__}")
@@ -30,6 +32,19 @@ def add_kubectl_tools():
     if not config.security_config.readonly:
         for func in KUBECTL_RW_TOOLS + KUBECTL_ADMIN_TOOLS:
             logger.debug(f"Registering kubectl function: {func.__name__}")
+            mcp.tool()(func)
+
+
+def add_helm_tools(config: SecurityConfig):
+    # Register read-only functions
+    for func in HELM_READ_ONLY_TOOLS:
+        logger.debug(f"Registering helm function: {func.__name__}")
+        mcp.tool()(func)
+
+    # Register rw and admin functions
+    if not config.security_config.readonly:
+        for func in HELM_RW_TOOLS + HELM_ADMIN_TOOLS:
+            logger.debug(f"Registering helm function: {func.__name__}")
             mcp.tool()(func)
 
 
@@ -99,14 +114,12 @@ def server():
 
     # Setup kubectl tools
     # TODO: need a further discussion on using k8s sdk or kubectl, comment out these codes as they are duplicated with kubectl
-    add_kubectl_tools()
+    add_kubectl_tools(config)
 
     # Setup tools
     if not args.disable_helm:
-        mcp.tool(
-            "Run-helm-command",
-            "Run helm command and get result, The command should start with helm",
-        )(helm)
+        # Register specific helm tools instead of the general helm command
+        add_helm_tools(config)
 
     # Run the server
     mcp.run(transport=args.transport)

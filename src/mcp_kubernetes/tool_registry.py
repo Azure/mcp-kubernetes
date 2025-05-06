@@ -1,5 +1,7 @@
 from .kubectl import *
+from .helm import *
 
+# kubectl tools
 KUBECTL_READ_ONLY_TOOLS = [
     kubectl_get,
     kubectl_describe,
@@ -41,3 +43,36 @@ KUBECTL_ADMIN_TOOLS = [
 ]
 
 KUBECTL_ALL_TOOLS = KUBECTL_READ_ONLY_TOOLS + KUBECTL_RW_TOOLS + KUBECTL_ADMIN_TOOLS
+
+
+# helm tools
+HELM_READ_ONLY_TOOLS = [
+    helm_list,
+    helm_get,
+    helm_status,
+    helm_history,
+    helm_search,
+    helm_template,
+    helm_show,
+    helm_verify,
+    helm_env,
+]
+
+HELM_RW_TOOLS = [
+    helm_install,
+    helm_upgrade,
+    helm_rollback,
+    helm_uninstall,
+    helm_test,
+]
+
+HELM_ADMIN_TOOLS = [
+    helm_repo,
+    helm_push,
+    helm_dependency,
+    helm_package,
+    helm_registry,
+    helm_pull,
+]
+
+HELM_ALL_TOOLS = HELM_READ_ONLY_TOOLS + HELM_RW_TOOLS + HELM_ADMIN_TOOLS
