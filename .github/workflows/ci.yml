@@ -89,7 +89,7 @@ jobs:
           go build -v -ldflags="-X github.com/Azure/mcp-kubernetes/internal/version.GitCommit=$(git rev-parse HEAD) -X github.com/Azure/mcp-kubernetes/internal/version.BuildMetadata=$(date +%Y%m%d)" -o mcp-kubernetes ./cmd/mcp-kubernetes
       
       - name: Build Docker image
-        run: docker build -t mcp-kubernetes:test .
+        run: docker build -t mcp-kubernetes:test --build-arg VERSION=$(git describe --tags --always --dirty | cut -c2-),GIT_COMMIT=$(git rev-parse HEAD),BUILD_DATE=$(date +%Y%m%d),GIT_TREE_STATE=$(if git diff --quiet; then echo "clean"; else echo "dirty"; fi) .
       
       - name: Check Docker image
         run: |
