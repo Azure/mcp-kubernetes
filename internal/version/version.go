@@ -7,12 +7,8 @@ import (
 
 // Version information
 var (
-	// Major version component
-	Major = "0"
-	// Minor version component
-	Minor = "0"
-	// Patch version component
-	Patch = "1"
+	// GitVersion is the git tag version
+	GitVersion = "1"
 	// BuildMetadata is extra build time data
 	BuildMetadata = ""
 	// GitCommit is the git sha1
@@ -23,9 +19,11 @@ var (
 
 // GetVersion returns the version string
 func GetVersion() string {
-	version := fmt.Sprintf("%s.%s.%s", Major, Minor, Patch)
+	var version string
 	if BuildMetadata != "" {
-		version = fmt.Sprintf("%s+%s", version, BuildMetadata)
+		version = fmt.Sprintf("%s+%s", GitVersion, BuildMetadata)
+	} else {
+		version = GitVersion
 	}
 	return version
 }
