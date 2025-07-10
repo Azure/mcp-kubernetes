@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-test
+  labels:
+    name: dns-test
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-backend
+  labels:
+    name: app-backend
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-ns
+  labels:
+    name: secure-ns

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  custom.server: |
+    # Custom CoreDNS configuration that will cause issues
+    example.com:53 {
+        forward . 1.1.1.1  # This forward might cause issues
+        log
+    }
+  bad-upstream.server: |
+    # This will cause upstream DNS resolution failures
+    . {
+        forward . 192.168.999.999  # Invalid upstream DNS server
+        log
+    }

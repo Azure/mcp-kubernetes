@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: failing-worker
+  namespace: app-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-app
+      component: failing-worker
+  template:
+    metadata:
+      labels:
+        app: backend-app
+        component: failing-worker
+    spec:
+      containers:
+      - name: worker
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Starting worker that depends on DNS resolution..."
+          while true; do
+            echo "Attempting to connect to web-service.dns-test.svc.cluster.local"
+            nslookup web-service.dns-test.svc.cluster.local || exit 1
+            echo "Attempting to connect to external service..."
+            nslookup www.google.com || exit 1
+            echo "DNS resolution successful, sleeping..."
+            sleep 30
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-dependent-app
+  namespace: secure-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns-dependent-app
+  template:
+    metadata:
+      labels:
+        app: dns-dependent-app
+    spec:
+      dnsPolicy: "None"
+      dnsConfig:
+        nameservers:
+        - "8.8.8.8"  # Wrong DNS server - should be cluster DNS
+        searches:
+        - "production.local"
+        - "company.internal"
+        options:
+        - name: ndots
+          value: "2"
+      containers:
+      - name: app
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Starting app that requires internal service resolution..."
+          while true; do
+            echo "Trying to resolve backend-service.app-backend.svc.cluster.local"
+            nslookup backend-service.app-backend.svc.cluster.local || exit 1
+            echo "DNS resolution successful"
+            sleep 15
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-check-app
+  namespace: dns-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-check-app
+  template:
+    metadata:
+      labels:
+        app: health-check-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.20
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "nslookup backend-service.app-backend.svc.cluster.local && curl -f http://localhost/"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "nslookup www.google.com && curl -f http://localhost/"
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          failureThreshold: 2
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
