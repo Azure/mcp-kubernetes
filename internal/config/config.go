@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Azure/mcp-kubernetes/internal/security"
@@ -20,7 +21,7 @@ type ConfigData struct {
 	Transport       string
 	Host            string
 	Port            int
-	ReadOnly        bool
+	AccessLevel     string
 	AllowNamespaces string
 }
 
@@ -32,13 +33,13 @@ func NewConfig() *ConfigData {
 		SecurityConfig:  security.NewSecurityConfig(),
 		Transport:       "stdio",
 		Port:            8000,
-		ReadOnly:        false,
+		AccessLevel:     "readonly",
 		AllowNamespaces: "",
 	}
 }
 
 // ParseFlags parses command line arguments and updates the configuration
-func (cfg *ConfigData) ParseFlags() {
+func (cfg *ConfigData) ParseFlags() error {
 	// Server configuration
 	flag.StringVar(&cfg.Transport, "transport", "stdio", "Transport mechanism to use (stdio, sse or streamable-http)")
 	flag.StringVar(&cfg.Host, "host", "127.0.0.1", "Host to listen for the server (only used with transport sse or streamable-http)")
@@ -50,14 +51,24 @@ func (cfg *ConfigData) ParseFlags() {
 		"Comma-separated list of additional tools to support (kubectl is always enabled). Available: helm,cilium")
 
 	// Security settings
-	flag.BoolVar(&cfg.ReadOnly, "readonly", false, "Enable read-only mode (prevents write operations)")
+	flag.StringVar(&cfg.AccessLevel, "access-level", "readonly", "Access level (readonly, readwrite, or admin)")
 	flag.StringVar(&cfg.AllowNamespaces, "allow-namespaces", "",
 		"Comma-separated list of namespaces to allow (empty means all allowed)")
 
 	flag.Parse()
 
-	// Update security config
-	cfg.SecurityConfig.ReadOnly = cfg.ReadOnly
+	// Update security config with access level
+	switch cfg.AccessLevel {
+	case "readonly":
+		cfg.SecurityConfig.AccessLevel = security.AccessLevelReadOnly
+	case "readwrite":
+		cfg.SecurityConfig.AccessLevel = security.AccessLevelReadWrite
+	case "admin":
+		cfg.SecurityConfig.AccessLevel = security.AccessLevelAdmin
+	default:
+		return fmt.Errorf("invalid access level '%s'. Valid values are: readonly, readwrite, admin", cfg.AccessLevel)
+	}
+
 	if cfg.AllowNamespaces != "" {
 		cfg.SecurityConfig.SetAllowedNamespaces(cfg.AllowNamespaces)
 	}
@@ -72,6 +83,8 @@ func (cfg *ConfigData) ParseFlags() {
 			cfg.AdditionalTools[tool] = true
 		}
 	}
+
+	return nil
 }
 
 var availableTools = []string{"kubectl", "helm", "cilium"}

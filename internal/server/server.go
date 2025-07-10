@@ -8,6 +8,7 @@ import (
 	"github.com/Azure/mcp-kubernetes/internal/config"
 	"github.com/Azure/mcp-kubernetes/internal/helm"
 	"github.com/Azure/mcp-kubernetes/internal/kubectl"
+	"github.com/Azure/mcp-kubernetes/internal/security"
 	"github.com/Azure/mcp-kubernetes/internal/tools"
 	"github.com/Azure/mcp-kubernetes/internal/version"
 	"github.com/mark3labs/mcp-go/server"
@@ -82,23 +83,24 @@ func (s *Service) Run() error {
 
 // registerKubectlCommands registers individual kubectl commands as separate tools
 func (s *Service) registerKubectlCommands() {
-	// Register read-only kubectl commands
+	// Register read-only kubectl commands (always available)
 	for _, cmd := range kubectl.GetReadOnlyKubectlCommands() {
 		kubectlTool := kubectl.RegisterKubectlCommand(cmd)
 		commandExecutor := kubectl.CreateCommandExecutorFunc(cmd.Name)
 		s.mcpServer.AddTool(kubectlTool, tools.CreateToolHandler(commandExecutor, s.cfg))
 	}
 
-	// Only register read-write and admin commands if not in read-only mode
-	if !s.cfg.ReadOnly {
-		// Register read-write kubectl commands
+	// Register read-write commands if access level allows
+	if s.cfg.SecurityConfig.AccessLevel == security.AccessLevelReadWrite || s.cfg.SecurityConfig.AccessLevel == security.AccessLevelAdmin {
 		for _, cmd := range kubectl.GetReadWriteKubectlCommands() {
 			kubectlTool := kubectl.RegisterKubectlCommand(cmd)
 			commandExecutor := kubectl.CreateCommandExecutorFunc(cmd.Name)
 			s.mcpServer.AddTool(kubectlTool, tools.CreateToolHandler(commandExecutor, s.cfg))
 		}
+	}
 
-		// Register admin kubectl commands
+	// Register admin commands only if access level is admin
+	if s.cfg.SecurityConfig.AccessLevel == security.AccessLevelAdmin {
 		for _, cmd := range kubectl.GetAdminKubectlCommands() {
 			kubectlTool := kubectl.RegisterKubectlCommand(cmd)
 			commandExecutor := kubectl.CreateCommandExecutorFunc(cmd.Name)

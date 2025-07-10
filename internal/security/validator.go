@@ -17,7 +17,18 @@ var (
 	KubectlReadOperations = []string{
 		"get", "describe", "explain", "logs", "top", "auth", "config",
 		"cluster-info", "api-resources", "api-versions", "version", "diff",
-		"completion", "help", "kustomize", "options", "plugin", "proxy", "wait", "cp",
+		"completion", "help", "kustomize", "options", "plugin", "proxy", "wait", "events",
+	}
+
+	// KubectlReadWriteOperations defines kubectl operations that modify state but are not admin operations
+	KubectlReadWriteOperations = []string{
+		"create", "delete", "apply", "expose", "run", "set", "rollout", "scale",
+		"autoscale", "label", "annotate", "patch", "replace", "cp", "exec",
+	}
+
+	// KubectlAdminOperations defines kubectl operations that require admin privileges
+	KubectlAdminOperations = []string{
+		"cordon", "uncordon", "drain", "taint", "certificate",
 	}
 
 	// HelmReadOperations defines helm operations that don't modify state
@@ -69,12 +80,46 @@ func (v *Validator) getReadOperationsList(commandType string) []string {
 	}
 }
 
+// getReadWriteOperationsList returns the appropriate list of read-write operations based on command type
+func (v *Validator) getReadWriteOperationsList(commandType string) []string {
+	switch commandType {
+	case CommandTypeKubectl:
+		return KubectlReadWriteOperations
+	case CommandTypeHelm:
+		// For now, assume helm write operations are same as read operations
+		// This can be expanded when helm write operations are defined
+		return []string{}
+	case CommandTypeCilium:
+		// For now, assume cilium write operations are same as read operations  
+		// This can be expanded when cilium write operations are defined
+		return []string{}
+	default:
+		return []string{}
+	}
+}
+
+// getAdminOperationsList returns the appropriate list of admin operations based on command type
+func (v *Validator) getAdminOperationsList(commandType string) []string {
+	switch commandType {
+	case CommandTypeKubectl:
+		return KubectlAdminOperations
+	case CommandTypeHelm:
+		// For now, assume helm admin operations are not defined
+		// This can be expanded when helm admin operations are defined
+		return []string{}
+	case CommandTypeCilium:
+		// For now, assume cilium admin operations are not defined
+		// This can be expanded when cilium admin operations are defined
+		return []string{}
+	default:
+		return []string{}
+	}
+}
+
 // ValidateCommand validates a command against all security settings
 func (v *Validator) ValidateCommand(command, commandType string) error {
-	readOperations := v.getReadOperationsList(commandType)
-
-	// Check readonly restrictions
-	if err := v.validateReadOnly(command, readOperations); err != nil {
+	// Check access level restrictions
+	if err := v.validateAccessLevel(command, commandType); err != nil {
 		return err
 	}
 
@@ -86,11 +131,36 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 	return nil
 }
 
-// validateReadOnly validates if a command is allowed in read-only mode
-func (v *Validator) validateReadOnly(command string, readOperations []string) error {
-	// Check if we're in readonly mode and if this is a write operation
-	if v.secConfig.ReadOnly && !v.isReadOperation(command, readOperations) {
-		return &ValidationError{Message: "Error: Cannot execute write operations in read-only mode"}
+// validateAccessLevel validates if a command is allowed based on the configured access level
+func (v *Validator) validateAccessLevel(command, commandType string) error {
+	readOperations := v.getReadOperationsList(commandType)
+	readWriteOperations := v.getReadWriteOperationsList(commandType)
+	adminOperations := v.getAdminOperationsList(commandType)
+
+	operation := v.extractOperationFromCommand(command, commandType)
+
+	switch v.secConfig.AccessLevel {
+	case AccessLevelReadOnly:
+		if !v.isOperationInList(operation, readOperations) {
+			return &ValidationError{Message: "Error: Cannot execute write or admin operations in read-only mode"}
+		}
+	case AccessLevelReadWrite:
+		if !v.isOperationInList(operation, readOperations) && !v.isOperationInList(operation, readWriteOperations) {
+			// Check if it's an admin operation to provide better error message
+			if v.isOperationInList(operation, adminOperations) {
+				return &ValidationError{Message: "Error: Cannot execute admin operations in read-write mode"}
+			}
+			return &ValidationError{Message: "Error: Operation not allowed in read-write mode"}
+		}
+	case AccessLevelAdmin:
+		// Admin level allows all operations (read, write, and admin)
+		if !v.isOperationInList(operation, readOperations) && 
+		   !v.isOperationInList(operation, readWriteOperations) && 
+		   !v.isOperationInList(operation, adminOperations) {
+			return &ValidationError{Message: "Error: Unknown operation"}
+		}
+	default:
+		return &ValidationError{Message: "Error: Invalid access level configuration"}
 	}
 
 	return nil
@@ -118,28 +188,32 @@ func (v *Validator) validateNamespaceScope(command string) error {
 	return nil
 }
 
-// isReadOperation checks if a command is a read operation
-func (v *Validator) isReadOperation(command string, allowedOperations []string) bool {
+// isOperationInList checks if an operation is in the given list
+func (v *Validator) isOperationInList(operation string, allowedOperations []string) bool {
+	for _, allowed := range allowedOperations {
+		if operation == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// extractOperationFromCommand extracts the operation from a command
+func (v *Validator) extractOperationFromCommand(command, commandType string) string {
 	cmdParts := strings.Fields(command)
 	var operation string
 
 	for _, part := range cmdParts {
 		if !strings.HasPrefix(part, "-") {
 			// Skip the initial command name (kubectl, helm, cilium)
-			if part != CommandTypeKubectl && part != CommandTypeHelm && part != CommandTypeCilium {
+			if part != commandType {
 				operation = part
 				break
 			}
 		}
 	}
 
-	for _, allowed := range allowedOperations {
-		if operation == allowed {
-			return true
-		}
-	}
-
-	return false
+	return operation
 }
 
 // extractNamespaceFromCommand extracts the namespace from a command

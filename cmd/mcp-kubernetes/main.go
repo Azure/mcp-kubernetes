@@ -12,7 +12,10 @@ import (
 func main() {
 	// Create configuration instance and parse command line arguments
 	cfg := config.NewConfig()
-	cfg.ParseFlags()
+	if err := cfg.ParseFlags(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Create validator and run validation checks
 	v := config.NewValidator(cfg)

@@ -5,21 +5,52 @@ import (
 	"testing"
 )
 
-func TestValidatorReadOnly(t *testing.T) {
-	secConfig := NewSecurityConfig()
-	secConfig.ReadOnly = true
-	validator := NewValidator(secConfig)
+func TestValidatorAccessLevels(t *testing.T) {
+	tests := []struct {
+		name        string
+		accessLevel AccessLevel
+		command     string
+		shouldErr   bool
+		errContains string
+	}{
+		// ReadOnly access level tests
+		{"ReadOnly - get pods", AccessLevelReadOnly, "kubectl get pods", false, ""},
+		{"ReadOnly - describe pod", AccessLevelReadOnly, "kubectl describe pod mypod", false, ""},
+		{"ReadOnly - delete pod", AccessLevelReadOnly, "kubectl delete pod mypod", true, "read-only mode"},
+		{"ReadOnly - create deployment", AccessLevelReadOnly, "kubectl create deployment nginx --image=nginx", true, "read-only mode"},
+		{"ReadOnly - cordon node", AccessLevelReadOnly, "kubectl cordon node1", true, "read-only mode"},
 
-	// Test read operation
-	err := validator.ValidateCommand("kubectl get pods", CommandTypeKubectl)
-	if err != nil {
-		t.Errorf("Read operation should be allowed in read-only mode: %v", err)
+		// ReadWrite access level tests
+		{"ReadWrite - get pods", AccessLevelReadWrite, "kubectl get pods", false, ""},
+		{"ReadWrite - delete pod", AccessLevelReadWrite, "kubectl delete pod mypod", false, ""},
+		{"ReadWrite - create deployment", AccessLevelReadWrite, "kubectl create deployment nginx --image=nginx", false, ""},
+		{"ReadWrite - cordon node", AccessLevelReadWrite, "kubectl cordon node1", true, "admin operations"},
+		{"ReadWrite - drain node", AccessLevelReadWrite, "kubectl drain node1", true, "admin operations"},
+
+		// Admin access level tests
+		{"Admin - get pods", AccessLevelAdmin, "kubectl get pods", false, ""},
+		{"Admin - delete pod", AccessLevelAdmin, "kubectl delete pod mypod", false, ""},
+		{"Admin - create deployment", AccessLevelAdmin, "kubectl create deployment nginx --image=nginx", false, ""},
+		{"Admin - cordon node", AccessLevelAdmin, "kubectl cordon node1", false, ""},
+		{"Admin - drain node", AccessLevelAdmin, "kubectl drain node1", false, ""},
 	}
 
-	// Test write operation
-	err = validator.ValidateCommand("kubectl delete pods mypod", CommandTypeKubectl)
-	if err == nil {
-		t.Error("Write operation should not be allowed in read-only mode")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			secConfig := NewSecurityConfig()
+			secConfig.AccessLevel = tc.accessLevel
+			validator := NewValidator(secConfig)
+
+			err := validator.ValidateCommand(tc.command, CommandTypeKubectl)
+
+			if tc.shouldErr && err == nil {
+				t.Errorf("Expected error for command %q with access level %s", tc.command, tc.accessLevel)
+			} else if !tc.shouldErr && err != nil {
+				t.Errorf("Unexpected error for command %q with access level %s: %v", tc.command, tc.accessLevel, err)
+			} else if err != nil && tc.errContains != "" && !strings.Contains(err.Error(), tc.errContains) {
+				t.Errorf("Error message should contain %q, got: %v", tc.errContains, err)
+			}
+		})
 	}
 }
 
@@ -85,7 +116,7 @@ func TestNamespaceHandling(t *testing.T) {
 func TestReadOperationsValidation(t *testing.T) {
 	// Test read operations validation through public API
 	secConfig := NewSecurityConfig()
-	secConfig.ReadOnly = true
+	secConfig.AccessLevel = AccessLevelReadOnly
 	validator := NewValidator(secConfig)
 
 	// Test cases for read operations
@@ -103,7 +134,7 @@ func TestReadOperationsValidation(t *testing.T) {
 		{"helm install chart", CommandTypeHelm, true},
 		{"helm uninstall release", CommandTypeHelm, true},
 		{"cilium status", CommandTypeCilium, false},
-		{"cilium endpoint list", CommandTypeCilium, false},
+		{"cilium endpoint list", CommandTypeCilium, false}, // "endpoint" is in CiliumReadOperations
 		{"cilium install", CommandTypeCilium, true},
 	}
 
@@ -122,30 +153,30 @@ func TestValidateCommand(t *testing.T) {
 	// Comprehensive test with multiple security configurations
 	testCases := []struct {
 		name        string
-		readonly    bool
+		accessLevel AccessLevel
 		namespaces  string
 		command     string
 		commandType string
 		shouldErr   bool
 	}{
-		{"Read operation in readonly mode", true, "", "kubectl get pods", CommandTypeKubectl, false},
-		{"Write operation in readonly mode", true, "", "kubectl delete pods", CommandTypeKubectl, true},
+		{"Read operation in readonly mode", AccessLevelReadOnly, "", "kubectl get pods", CommandTypeKubectl, false},
+		{"Write operation in readonly mode", AccessLevelReadOnly, "", "kubectl delete pods", CommandTypeKubectl, true},
 
-		{"Command in allowed namespace", false, "ns1,ns2", "kubectl get pods -n ns1", CommandTypeKubectl, false},
-		{"Command in disallowed namespace", false, "ns1,ns2", "kubectl get pods -n ns3", CommandTypeKubectl, true},
+		{"Command in allowed namespace", AccessLevelReadWrite, "ns1,ns2", "kubectl get pods -n ns1", CommandTypeKubectl, false},
+		{"Command in disallowed namespace", AccessLevelReadWrite, "ns1,ns2", "kubectl get pods -n ns3", CommandTypeKubectl, true},
 
-		{"All namespaces restricted", false, "ns1,ns2", "kubectl get pods --all-namespaces", CommandTypeKubectl, true},
+		{"All namespaces restricted", AccessLevelReadWrite, "ns1,ns2", "kubectl get pods --all-namespaces", CommandTypeKubectl, true},
 
 		// Combined restrictions
-		{"Read op in allowed ns with readonly", true, "ns1", "kubectl get pods -n ns1", CommandTypeKubectl, false},
-		{"Read op in disallowed ns with readonly", true, "ns1", "kubectl get pods -n ns2", CommandTypeKubectl, true},
-		{"Write op in allowed ns with readonly", true, "ns1", "kubectl delete pods -n ns1", CommandTypeKubectl, true},
+		{"Read op in allowed ns with readonly", AccessLevelReadOnly, "ns1", "kubectl get pods -n ns1", CommandTypeKubectl, false},
+		{"Read op in disallowed ns with readonly", AccessLevelReadOnly, "ns1", "kubectl get pods -n ns2", CommandTypeKubectl, true},
+		{"Write op in allowed ns with readonly", AccessLevelReadOnly, "ns1", "kubectl delete pods -n ns1", CommandTypeKubectl, true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			secConfig := NewSecurityConfig()
-			secConfig.ReadOnly = tc.readonly
+			secConfig.AccessLevel = tc.accessLevel
 			if tc.namespaces != "" {
 				secConfig.SetAllowedNamespaces(tc.namespaces)
 			}

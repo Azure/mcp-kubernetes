@@ -5,10 +5,19 @@ import (
 	"strings"
 )
 
+// AccessLevel defines the level of access allowed
+type AccessLevel string
+
+const (
+	AccessLevelReadOnly   AccessLevel = "readonly"
+	AccessLevelReadWrite  AccessLevel = "readwrite"
+	AccessLevelAdmin      AccessLevel = "admin"
+)
+
 // SecurityConfig holds security-related configuration
 type SecurityConfig struct {
-	// ReadOnly mode prevents write operations
-	ReadOnly bool
+	// AccessLevel defines the level of access allowed (readonly, readwrite, admin)
+	AccessLevel AccessLevel
 	// AllowedNamespaces is a list of literal namespace names
 	allowedNamespaces []string
 	// allowedNamespacesRe is a list of compiled regex patterns for namespace matching
@@ -18,7 +27,7 @@ type SecurityConfig struct {
 // NewSecurityConfig creates a new SecurityConfig instance
 func NewSecurityConfig() *SecurityConfig {
 	return &SecurityConfig{
-		ReadOnly:            false,
+		AccessLevel:         AccessLevelReadOnly,
 		allowedNamespaces:   []string{},
 		allowedNamespacesRe: []*regexp.Regexp{},
 	}

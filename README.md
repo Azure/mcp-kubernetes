@@ -96,13 +96,54 @@ Command line arguments:
 
 ```sh
 Usage of ./mcp-kubernetes:
+      --access-level string       Access level (readonly, readwrite, or admin) (default "readonly")
       --additional-tools string   Comma-separated list of additional tools to support (kubectl is always enabled). Available: helm,cilium
       --allow-namespaces string   Comma-separated list of namespaces to allow (empty means all allowed)
       --host string               Host to listen for the server (only used with transport sse or streamable-http) (default "127.0.0.1")
       --port int                  Port to listen for the server (only used with transport sse or streamable-http) (default 8000)
-      --readonly                  Enable read-only mode (prevents write operations)
       --timeout int               Timeout for command execution in seconds, default is 60s (default 60)
       --transport string          Transport mechanism to use (stdio, sse or streamable-http) (default "stdio")
+```
+
+### Access Levels
+
+The `--access-level` flag controls what operations are allowed:
+
+- **`readonly`** (default): Only read operations are allowed (get, describe, logs, etc.)
+- **`readwrite`**: Read and write operations are allowed (create, delete, apply, etc.)
+- **`admin`**: All operations are allowed, including admin operations (cordon, drain, taint, etc.)
+
+Example configurations:
+
+```json
+// Default read-only access (no need to specify --access-level)
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "mcp-kubernetes"
+    }
+  }
+}
+
+// Read-write access  
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "mcp-kubernetes",
+      "args": ["--access-level", "readwrite"]
+    }
+  }
+}
+
+// Admin access
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "mcp-kubernetes", 
+      "args": ["--access-level", "admin"]
+    }
+  }
+}
 ```
 
 ## Usage
