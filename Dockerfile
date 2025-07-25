@@ -50,6 +50,14 @@ RUN CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium
     tar xzf cilium-linux-${CLI_ARCH}.tar.gz -C /usr/local/bin && \
     rm cilium-linux-${CLI_ARCH}.tar.gz
 
+RUN HUBBLE_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/hubble/master/stable.txt) && \
+    HUBBLE_ARCH=amd64 && \
+    if [ "$(uname -m)" = "aarch64" ]; then HUBBLE_ARCH=arm64; fi && \
+    curl -L --fail --remote-name-all https://github.com/cilium/hubble/releases/download/$HUBBLE_VERSION/hubble-linux-${HUBBLE_ARCH}.tar.gz{,.sha256sum} && \
+    sha256sum -c hubble-linux-${HUBBLE_ARCH}.tar.gz.sha256sum && \
+    tar xzvf hubble-linux-${HUBBLE_ARCH}.tar.gz -C /usr/local/bin && \
+    rm hubble-linux-${HUBBLE_ARCH}.tar.gz hubble-linux-${HUBBLE_ARCH}.tar.gz.sha256sum
+
 # Copy binary from builder
 COPY --from=builder /app/mcp-kubernetes /usr/local/bin/mcp-kubernetes
 

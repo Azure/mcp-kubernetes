@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/mcp-kubernetes/pkg/cilium"
 	"github.com/Azure/mcp-kubernetes/pkg/config"
 	"github.com/Azure/mcp-kubernetes/pkg/helm"
+	"github.com/Azure/mcp-kubernetes/pkg/hubble"
 	"github.com/Azure/mcp-kubernetes/pkg/kubectl"
 	"github.com/Azure/mcp-kubernetes/pkg/tools"
 	"github.com/Azure/mcp-kubernetes/pkg/version"
@@ -51,6 +52,11 @@ func (s *Service) Initialize() error {
 	if s.cfg.AdditionalTools["cilium"] {
 		ciliumTool := cilium.RegisterCilium()
 		s.mcpServer.AddTool(ciliumTool, tools.CreateToolHandler(cilium.NewExecutor(), s.cfg))
+	}
+
+	if s.cfg.AdditionalTools["hubble"] {
+		hubbleTool := hubble.RegisterHubble()
+		s.mcpServer.AddTool(hubbleTool, tools.CreateToolHandler(hubble.NewExecutor(), s.cfg))
 	}
 
 	return nil

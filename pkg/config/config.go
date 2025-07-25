@@ -48,7 +48,7 @@ func (cfg *ConfigData) ParseFlags() error {
 
 	// Tools configuration
 	additionalTools := flag.String("additional-tools", "",
-		"Comma-separated list of additional tools to support (kubectl is always enabled). Available: helm,cilium")
+		"Comma-separated list of additional tools to support (kubectl is always enabled). Available: helm,cilium,hubble")
 
 	// Security settings
 	flag.StringVar(&cfg.AccessLevel, "access-level", "readonly", "Access level (readonly, readwrite, or admin)")
@@ -87,7 +87,7 @@ func (cfg *ConfigData) ParseFlags() error {
 	return nil
 }
 
-var availableTools = []string{"kubectl", "helm", "cilium"}
+var availableTools = []string{"kubectl", "helm", "cilium", "hubble"}
 
 // IsToolSupported checks if a tool is supported
 func IsToolSupported(tool string) bool {

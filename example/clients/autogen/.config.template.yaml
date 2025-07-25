@@ -6,6 +6,6 @@ model_config:
   azure_endpoint: "" #"https://your-endpoint.azure.com/"
 app_config:
   # get the parameters from the command line
-  additional_tools: "helm,cilium"
+  additional_tools: "helm,cilium,hubble"
   allow_namespaces: ""
   readonly: false

@@ -10,6 +10,7 @@ const (
 	CommandTypeKubectl = "kubectl"
 	CommandTypeHelm    = "helm"
 	CommandTypeCilium  = "cilium"
+	CommandTypeHubble  = "hubble"
 )
 
 var (
@@ -43,6 +44,11 @@ var (
 		"endpoint", "identity", "ip", "map", "metrics", "monitor", "policy",
 		"hubble", "bpf", "list", "observe", "service",
 	}
+
+	// HubbleReadOperations defines hubble operations that don't modify state
+	HubbleReadOperations = []string{
+		"status", "version", "help", "observe", "status", "list", "config",
+	}
 )
 
 // Validator handles validation of commands against security configuration
@@ -75,6 +81,8 @@ func (v *Validator) getReadOperationsList(commandType string) []string {
 		return HelmReadOperations
 	case CommandTypeCilium:
 		return CiliumReadOperations
+	case CommandTypeHubble:
+		return HubbleReadOperations
 	default:
 		return []string{}
 	}
@@ -93,6 +101,10 @@ func (v *Validator) getReadWriteOperationsList(commandType string) []string {
 		// For now, assume cilium write operations are same as read operations
 		// This can be expanded when cilium write operations are defined
 		return []string{}
+	case CommandTypeHubble:
+		// For now, assume hubble write operations are same as read operations
+		// This can be expanded when hubble write operations are defined
+		return []string{}
 	default:
 		return []string{}
 	}
@@ -110,6 +122,10 @@ func (v *Validator) getAdminOperationsList(commandType string) []string {
 	case CommandTypeCilium:
 		// For now, assume cilium admin operations are not defined
 		// This can be expanded when cilium admin operations are defined
+		return []string{}
+	case CommandTypeHubble:
+		// For now, assume hubble admin operations are not defined
+		// This can be expanded when hubble admin operations are defined
 		return []string{}
 	default:
 		return []string{}
