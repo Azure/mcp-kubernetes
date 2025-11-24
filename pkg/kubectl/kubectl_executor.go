@@ -274,9 +274,3 @@ func (e *KubectlToolExecutor) buildCommand(kubectlCommand, resource, args string
 
 	return strings.Join(parts, " ")
 }
-
-// GetCommandForValidation returns the constructed command for security validation
-func (e *KubectlToolExecutor) GetCommandForValidation(operation, resource, args string, toolName string) string {
-	kubectlCommand, _ := MapOperationToCommand(toolName, operation, resource)
-	return e.buildCommand(kubectlCommand, resource, args)
-}

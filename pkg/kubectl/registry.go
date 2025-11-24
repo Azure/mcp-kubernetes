@@ -513,23 +513,7 @@ func GetKubectlToolNames() []string {
 
 // MapOperationToCommand maps consolidated operations to kubectl commands
 func MapOperationToCommand(toolName, operation, resource string) (string, error) {
-	// This function will be used by the executor to map operations to actual kubectl commands
-	// For now, return a basic mapping
 	switch toolName {
-	case "call_kubectl":
-		if operation == "rollout" {
-			return "rollout " + resource, nil
-		}
-		if operation == "auth" {
-			return "auth " + resource, nil
-		}
-		if operation == "certificate" {
-			return "certificate " + resource, nil
-		}
-		if operation == "config" {
-			return "config " + resource, nil
-		}
-		return operation, nil
 	case "kubectl_resources":
 		return operation, nil
 	case "kubectl_workloads":
