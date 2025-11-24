@@ -1,6 +1,10 @@
 package kubectl
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/Azure/mcp-kubernetes/pkg/security"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -364,18 +368,18 @@ Examples:
 func createCallKubectlTool(accessLevel string) mcp.Tool {
 	var description string
 
-	readOnly := accessLevel == AccessLevelReadOnly
+	readCommands := strings.Join(security.KubectlReadOperations, ", ")
+	writeCommands := strings.Join(security.KubectlReadWriteOperations, ", ")
+	adminCommands := strings.Join(security.KubectlAdminOperations, ", ")
 
-	if readOnly {
-		description = `Execute kubectl commands with read-only access.
+	switch accessLevel {
+	case AccessLevelReadOnly:
+		description = fmt.Sprintf(`Execute kubectl commands with read-only access.
 
 Pass kubectl command arguments directly. All standard kubectl flags are supported.
 
 Allowed commands:
-- get, describe, logs, events, top
-- cluster-info, api-resources, api-versions, explain
-- diff, auth can-i
-- config current-context, config get-contexts
+%s
 
 Examples:
 - args='get pods -n default'
@@ -384,16 +388,15 @@ Examples:
 - args='top pods'
 - args='events --all-namespaces'
 - args='explain pods.spec.containers'
-- args='auth can-i create pods'`
-	} else if accessLevel == AccessLevelReadWrite {
-		description = `Execute kubectl commands with read and write access.
+- args='auth can-i create pods'`, readCommands)
+	case AccessLevelReadWrite:
+		description = fmt.Sprintf(`Execute kubectl commands with read and write access.
 
 Pass kubectl command arguments directly. All standard kubectl flags are supported.
 
 Allowed commands:
-Read: get, describe, logs, events, top, cluster-info, api-resources, api-versions, explain, diff, auth can-i
-Write: create, delete, apply, patch, replace, run, expose, scale, autoscale, rollout, label, annotate, set, exec, cp
-Config: config current-context, config get-contexts, config use-context
+Read: %s
+Write: %s
 
 Examples:
 - args='get pods -n default'
@@ -404,17 +407,16 @@ Examples:
 - args='rollout status deployment/myapp'
 - args='label pods foo unhealthy=true'
 - args='exec nginx-pod -- date'
-- args='config use-context my-cluster-context'`
-	} else {
-		description = `Execute kubectl commands with full admin access.
+- args='config use-context my-cluster-context'`, readCommands, writeCommands)
+	case AccessLevelAdmin:
+		description = fmt.Sprintf(`Execute kubectl commands with full admin access.
 
 Pass kubectl command arguments directly. All standard kubectl flags are supported.
 
 Allowed commands:
-Read: get, describe, logs, events, top, cluster-info, api-resources, api-versions, explain, diff, auth can-i
-Write: create, delete, apply, patch, replace, run, expose, scale, autoscale, rollout, label, annotate, set, exec, cp
-Admin: cordon, uncordon, drain, taint, certificate approve, certificate deny
-Config: config current-context, config get-contexts, config use-context
+Read: %s
+Write: %s
+Admin: %s
 
 Examples:
 - args='get pods -n default'
@@ -423,7 +425,19 @@ Examples:
 - args='cordon worker-1'
 - args='drain worker-1 --ignore-daemonsets'
 - args='taint nodes worker-1 dedicated=special:NoSchedule'
-- args='certificate approve my-cert-csr'`
+- args='certificate approve my-cert-csr'`, readCommands, writeCommands, adminCommands)
+	default:
+		description = fmt.Sprintf(`Execute kubectl commands with unknown access level (defaulting to read-only).
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+%s
+
+Examples:
+- args='get pods -n default'
+- args='describe deployment myapp -n production'
+- args='logs nginx-pod -f'`, readCommands)
 	}
 
 	return mcp.NewTool("call_kubectl",
