@@ -22,6 +22,30 @@ func NewKubectlToolExecutor() *KubectlToolExecutor {
 
 // Execute processes structured kubectl commands with operation/resource/args parameters
 func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+	// Get the tool name from params (injected by handler)
+	toolName, _ := params["_tool_name"].(string)
+
+	// Handle call_kubectl with simplified args-only parameter
+	if toolName == "call_kubectl" {
+		args, ok := params["args"].(string)
+		if !ok {
+			return "", fmt.Errorf("args parameter is required and must be a string")
+		}
+
+		// Use args directly as the kubectl command
+		fullCommand := args
+
+		// Validate the command against security settings (includes access level and namespace checks)
+		validator := security.NewValidator(cfg.SecurityConfig)
+		if err := validator.ValidateCommand(fullCommand, security.CommandTypeKubectl); err != nil {
+			return "", err
+		}
+
+		// Execute the command directly
+		return e.executor.executeKubectlCommand(fullCommand, "", cfg)
+	}
+
+	// Handle legacy specialized tools with operation/resource/args parameters
 	// Extract structured parameters
 	operation, ok := params["operation"].(string)
 	if !ok {
@@ -38,9 +62,6 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 		return "", fmt.Errorf("args parameter is required and must be a string")
 	}
 
-	// Get the tool name from params (injected by handler)
-	toolName, _ := params["_tool_name"].(string)
-
 	// Validate the operation/resource combination
 	if err := e.validateCombination(toolName, operation, resource); err != nil {
 		return "", err
@@ -55,12 +76,7 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 	// Build the full command
 	fullCommand := e.buildCommand(kubectlCommand, resource, args)
 
-	// Check access level for the command
-	if err := e.checkAccessLevel(fullCommand, cfg); err != nil {
-		return "", err
-	}
-
-	// Validate the command against security settings
+	// Validate the command against security settings (includes access level and namespace checks)
 	validator := security.NewValidator(cfg.SecurityConfig)
 	if err := validator.ValidateCommand(fullCommand, security.CommandTypeKubectl); err != nil {
 		return "", err
@@ -71,6 +87,8 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 }
 
 // validateCombination validates if the operation/resource combination is valid for the tool
+// Note: This is only used for legacy specialized tools (kubectl_resources, kubectl_workloads, etc.)
+// The unified call_kubectl tool does not use this validation
 func (e *KubectlToolExecutor) validateCombination(toolName, operation, resource string) error {
 	switch toolName {
 	case "kubectl_resources":
@@ -255,75 +273,4 @@ func (e *KubectlToolExecutor) buildCommand(kubectlCommand, resource, args string
 	}
 
 	return strings.Join(parts, " ")
-}
-
-// checkAccessLevel validates the command against the configured access level
-func (e *KubectlToolExecutor) checkAccessLevel(command string, cfg *config.ConfigData) error {
-	// Parse the command to determine its category
-	category := e.determineCommandCategory(command)
-
-	switch cfg.AccessLevel {
-	case "readonly":
-		if category != "read-only" {
-			return fmt.Errorf("command requires %s access, but current access level is read-only", category)
-		}
-	case "readwrite":
-		if category == "admin" {
-			return fmt.Errorf("command requires admin access, but current access level is read-write")
-		}
-	case "admin":
-		// Admin can execute all commands
-	default:
-		return fmt.Errorf("unknown access level: %s", cfg.AccessLevel)
-	}
-
-	return nil
-}
-
-// determineCommandCategory determines if a command is read-only, read-write, or admin
-func (e *KubectlToolExecutor) determineCommandCategory(command string) string {
-	// Extract the base command
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return "read-only"
-	}
-
-	baseCmd := parts[0]
-
-	// Check if it's a read-only command
-	readOnlyCommands := GetReadOnlyKubectlCommands()
-	for _, cmd := range readOnlyCommands {
-		if cmd.Name == baseCmd {
-			return "read-only"
-		}
-	}
-
-	// Check if it's an admin command
-	adminCommands := GetAdminKubectlCommands()
-	for _, cmd := range adminCommands {
-		if cmd.Name == baseCmd {
-			return "admin"
-		}
-	}
-
-	// Special handling for complex commands
-	if baseCmd == "rollout" && len(parts) > 1 {
-		// rollout status/history are read-only
-		if parts[1] == "status" || parts[1] == "history" {
-			return "read-only"
-		}
-	}
-
-	if baseCmd == "auth" && len(parts) > 1 && parts[1] == "can-i" {
-		return "read-only"
-	}
-
-	// Default to read-write for other commands
-	return "read-write"
-}
-
-// GetCommandForValidation returns the constructed command for security validation
-func (e *KubectlToolExecutor) GetCommandForValidation(operation, resource, args string, toolName string) string {
-	kubectlCommand, _ := MapOperationToCommand(toolName, operation, resource)
-	return e.buildCommand(kubectlCommand, resource, args)
 }

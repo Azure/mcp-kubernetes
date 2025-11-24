@@ -88,8 +88,10 @@ func (s *Service) Run() error {
 
 // registerKubectlCommands registers kubectl tools based on access level
 func (s *Service) registerKubectlCommands() {
-	// Get kubectl tools filtered by access level
-	kubectlTools := kubectl.RegisterKubectlTools(s.cfg.AccessLevel)
+	// Get kubectl tools filtered by access level and tool mode
+	// Use unified tool (call_kubectl) by default, unless USE_LEGACY_TOOLS=true
+	useUnifiedTool := !s.cfg.UseLegacyTools
+	kubectlTools := kubectl.RegisterKubectlTools(s.cfg.AccessLevel, useUnifiedTool)
 
 	// Create a kubectl executor
 	kubectlExecutor := kubectl.NewKubectlToolExecutor()

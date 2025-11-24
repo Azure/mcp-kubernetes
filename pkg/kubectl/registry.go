@@ -1,6 +1,10 @@
 package kubectl
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/Azure/mcp-kubernetes/pkg/security"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -40,7 +44,18 @@ type toolRegistration struct {
 }
 
 // RegisterKubectlTools returns kubectl tools filtered by access level
-func RegisterKubectlTools(accessLevel string) []mcp.Tool {
+// If useUnifiedTool is true, returns a single call_kubectl tool instead of multiple specialized tools
+func RegisterKubectlTools(accessLevel string, useUnifiedTool bool) []mcp.Tool {
+	// Normalize access level
+	if !isValidAccessLevel(accessLevel) {
+		accessLevel = AccessLevelReadOnly // Default to readonly for safety
+	}
+
+	// If unified tool is enabled, return only the call_kubectl tool
+	if useUnifiedTool {
+		return []mcp.Tool{createCallKubectlTool(accessLevel)}
+	}
+
 	// Define tool registry with access requirements
 	toolRegistry := []toolRegistration{
 		{creator: toolCreator(createResourcesTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
@@ -49,11 +64,6 @@ func RegisterKubectlTools(accessLevel string) []mcp.Tool {
 		{creator: toolCreator(createConfigTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
 		{creator: toolCreatorSimple(createWorkloadsTool), minAccess: AccessLevelReadWrite},
 		{creator: toolCreatorSimple(createMetadataTool), minAccess: AccessLevelReadWrite},
-	}
-
-	// Normalize access level
-	if !isValidAccessLevel(accessLevel) {
-		accessLevel = AccessLevelReadOnly // Default to readonly for safety
 	}
 
 	var tools []mcp.Tool
@@ -354,6 +364,91 @@ Examples:
 	)
 }
 
+// createCallKubectlTool creates a unified kubectl tool that combines all operations
+func createCallKubectlTool(accessLevel string) mcp.Tool {
+	var description string
+
+	readCommands := strings.Join(security.KubectlReadOperations, ", ")
+	writeCommands := strings.Join(security.KubectlReadWriteOperations, ", ")
+	adminCommands := strings.Join(security.KubectlAdminOperations, ", ")
+
+	switch accessLevel {
+	case AccessLevelReadOnly:
+		description = fmt.Sprintf(`Execute kubectl commands with read-only access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+%s
+
+Examples:
+- args='get pods -n default'
+- args='describe deployment myapp -n production'
+- args='logs nginx-pod -f'
+- args='top pods'
+- args='events --all-namespaces'
+- args='explain pods.spec.containers'
+- args='auth can-i create pods'`, readCommands)
+	case AccessLevelReadWrite:
+		description = fmt.Sprintf(`Execute kubectl commands with read and write access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+Read: %s
+Write: %s
+
+Examples:
+- args='get pods -n default'
+- args='create -f deployment.yaml'
+- args='apply -f deployment.yaml'
+- args='delete pod nginx-pod'
+- args='scale deployment myapp --replicas=3'
+- args='rollout status deployment/myapp'
+- args='label pods foo unhealthy=true'
+- args='exec nginx-pod -- date'
+- args='config use-context my-cluster-context'`, readCommands, writeCommands)
+	case AccessLevelAdmin:
+		description = fmt.Sprintf(`Execute kubectl commands with full admin access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+Read: %s
+Write: %s
+Admin: %s
+
+Examples:
+- args='get pods -n default'
+- args='apply -f deployment.yaml'
+- args='scale deployment myapp --replicas=3'
+- args='cordon worker-1'
+- args='drain worker-1 --ignore-daemonsets'
+- args='taint nodes worker-1 dedicated=special:NoSchedule'
+- args='certificate approve my-cert-csr'`, readCommands, writeCommands, adminCommands)
+	default:
+		description = fmt.Sprintf(`Execute kubectl commands with unknown access level (defaulting to read-only).
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+%s
+
+Examples:
+- args='get pods -n default'
+- args='describe deployment myapp -n production'
+- args='logs nginx-pod -f'`, readCommands)
+	}
+
+	return mcp.NewTool("call_kubectl",
+		mcp.WithDescription(description),
+		mcp.WithString("args",
+			mcp.Required(),
+			mcp.Description("Direct kubectl command arguments (e.g., 'get pods -n default', 'describe deployment myapp', 'logs nginx-pod -f')"),
+		),
+	)
+}
+
 // createConfigTool creates the configuration tool
 func createConfigTool(readOnly bool) mcp.Tool {
 	var description string
@@ -432,8 +527,6 @@ func GetKubectlToolNames() []string {
 
 // MapOperationToCommand maps consolidated operations to kubectl commands
 func MapOperationToCommand(toolName, operation, resource string) (string, error) {
-	// This function will be used by the executor to map operations to actual kubectl commands
-	// For now, return a basic mapping
 	switch toolName {
 	case "kubectl_resources":
 		return operation, nil

@@ -34,6 +34,9 @@ type ConfigData struct {
 
 	// Telemetry service
 	TelemetryService telemetry.TelemetryInterface
+
+	// UseLegacyTools controls whether to use multiple specialized tools (true) or unified call_kubectl tool (false, default)
+	UseLegacyTools bool
 }
 
 // NewConfig creates and returns a new configuration instance
@@ -46,6 +49,7 @@ func NewConfig() *ConfigData {
 		Port:            8000,
 		AccessLevel:     "readonly",
 		AllowNamespaces: "",
+		UseLegacyTools:  false,
 	}
 }
 
@@ -94,6 +98,11 @@ func (cfg *ConfigData) ParseFlags() error {
 
 	if cfg.AllowNamespaces != "" {
 		cfg.SecurityConfig.SetAllowedNamespaces(cfg.AllowNamespaces)
+	}
+
+	// Check USE_LEGACY_TOOLS environment variable
+	if os.Getenv("USE_LEGACY_TOOLS") == "true" {
+		cfg.UseLegacyTools = true
 	}
 
 	// Parse additional tools

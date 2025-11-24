@@ -6,8 +6,8 @@ import (
 )
 
 func TestRegisterKubectlTools(t *testing.T) {
-	// Test admin access level gets all tools
-	tools := RegisterKubectlTools("admin")
+	// Test admin access level gets all tools with specialized mode
+	tools := RegisterKubectlTools("admin", false)
 
 	// Verify we have the expected number of tools
 	expectedCount := 6
@@ -29,9 +29,37 @@ func TestRegisterKubectlTools(t *testing.T) {
 	}
 }
 
+func TestRegisterKubectlTools_UnifiedMode(t *testing.T) {
+	// Test that unified mode returns only call_kubectl tool
+	tools := RegisterKubectlTools("admin", true)
+
+	// Verify we have exactly one tool
+	if len(tools) != 1 {
+		t.Errorf("Expected 1 unified tool, got %d", len(tools))
+	}
+
+	// Verify it's the call_kubectl tool
+	if tools[0].Name != "call_kubectl" {
+		t.Errorf("Expected tool name 'call_kubectl', got '%s'", tools[0].Name)
+	}
+
+	// Verify description contains key indicators
+	desc := tools[0].Description
+	expectedContent := []string{
+		"Pass kubectl command arguments directly",
+		"get pods",
+		"args=",
+	}
+	for _, content := range expectedContent {
+		if !strings.Contains(desc, content) {
+			t.Errorf("Unified tool description missing content: %s", content)
+		}
+	}
+}
+
 func TestConsolidatedToolDescriptions(t *testing.T) {
-	// Test with admin access to get all tools
-	tools := RegisterKubectlTools("admin")
+	// Test with admin access to get all tools in specialized mode
+	tools := RegisterKubectlTools("admin", false)
 
 	tests := []struct {
 		toolName           string
@@ -106,8 +134,8 @@ func TestConsolidatedToolDescriptions(t *testing.T) {
 }
 
 func TestConsolidatedToolParameters(t *testing.T) {
-	// Test with admin access to get all tools
-	tools := RegisterKubectlTools("admin")
+	// Test with admin access to get all tools in specialized mode
+	tools := RegisterKubectlTools("admin", false)
 
 	// All tools should have the same three parameters
 	// expectedParams := []string{"operation", "resource", "args"}
@@ -377,7 +405,7 @@ func TestRegisterKubectlTools_AccessLevelFiltering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tools := RegisterKubectlTools(tt.accessLevel)
+			tools := RegisterKubectlTools(tt.accessLevel, false)
 
 			// Check that expected tools are present
 			for _, expectedTool := range tt.expectedTools {
@@ -406,8 +434,8 @@ func TestRegisterKubectlTools_AccessLevelFiltering(t *testing.T) {
 }
 
 func TestRegisterKubectlTools_ReadOnlyDescriptions(t *testing.T) {
-	// Test that read-only access level has appropriate descriptions
-	tools := RegisterKubectlTools("readonly")
+	// Test that read-only access level has appropriate descriptions in specialized mode
+	tools := RegisterKubectlTools("readonly", false)
 
 	for _, tool := range tools {
 		switch tool.Name {
@@ -434,8 +462,8 @@ func TestRegisterKubectlTools_ReadOnlyDescriptions(t *testing.T) {
 
 func TestRegisterKubectlTools_DefaultsToReadOnly(t *testing.T) {
 	// Test that unknown access level defaults to readonly
-	tools := RegisterKubectlTools("unknown")
-	readonlyTools := RegisterKubectlTools("readonly")
+	tools := RegisterKubectlTools("unknown", false)
+	readonlyTools := RegisterKubectlTools("readonly", false)
 
 	if len(tools) != len(readonlyTools) {
 		t.Errorf("Unknown access level should default to readonly, got %d tools, expected %d",
@@ -448,5 +476,64 @@ func TestRegisterKubectlTools_DefaultsToReadOnly(t *testing.T) {
 			t.Errorf("Tool mismatch at index %d: got %s, expected %s",
 				i, tool.Name, readonlyTools[i].Name)
 		}
+	}
+}
+
+func TestCallKubectlToolStructure(t *testing.T) {
+	// Test that call_kubectl tool has simplified structure with only args parameter
+	testCases := []struct {
+		name        string
+		accessLevel string
+		mustContain []string
+	}{
+		{
+			name:        "readonly",
+			accessLevel: "readonly",
+			mustContain: []string{
+				"Pass kubectl command arguments directly",
+				"get pods -n default",
+				"describe deployment myapp",
+			},
+		},
+		{
+			name:        "readwrite",
+			accessLevel: "readwrite",
+			mustContain: []string{
+				"Pass kubectl command arguments directly",
+				"get pods -n default",
+				"create -f deployment.yaml",
+			},
+		},
+		{
+			name:        "admin",
+			accessLevel: "admin",
+			mustContain: []string{
+				"Pass kubectl command arguments directly",
+				"get pods -n default",
+				"cordon worker-1",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tools := RegisterKubectlTools(tc.accessLevel, true)
+
+			if len(tools) != 1 {
+				t.Fatalf("Expected 1 tool, got %d", len(tools))
+			}
+
+			tool := tools[0]
+			if tool.Name != "call_kubectl" {
+				t.Errorf("Expected tool name 'call_kubectl', got '%s'", tool.Name)
+			}
+
+			// Verify description contains expected content
+			for _, expected := range tc.mustContain {
+				if !strings.Contains(tool.Description, expected) {
+					t.Errorf("call_kubectl description missing: %s", expected)
+				}
+			}
+		})
 	}
 }
