@@ -35,12 +35,7 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 		// Use args directly as the kubectl command
 		fullCommand := args
 
-		// Check access level for the command
-		if err := e.checkAccessLevel(fullCommand, cfg); err != nil {
-			return "", err
-		}
-
-		// Validate the command against security settings
+		// Validate the command against security settings (includes access level and namespace checks)
 		validator := security.NewValidator(cfg.SecurityConfig)
 		if err := validator.ValidateCommand(fullCommand, security.CommandTypeKubectl); err != nil {
 			return "", err
@@ -81,12 +76,7 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 	// Build the full command
 	fullCommand := e.buildCommand(kubectlCommand, resource, args)
 
-	// Check access level for the command
-	if err := e.checkAccessLevel(fullCommand, cfg); err != nil {
-		return "", err
-	}
-
-	// Validate the command against security settings
+	// Validate the command against security settings (includes access level and namespace checks)
 	validator := security.NewValidator(cfg.SecurityConfig)
 	if err := validator.ValidateCommand(fullCommand, security.CommandTypeKubectl); err != nil {
 		return "", err
@@ -97,10 +87,10 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 }
 
 // validateCombination validates if the operation/resource combination is valid for the tool
+// Note: This is only used for legacy specialized tools (kubectl_resources, kubectl_workloads, etc.)
+// The unified call_kubectl tool does not use this validation
 func (e *KubectlToolExecutor) validateCombination(toolName, operation, resource string) error {
 	switch toolName {
-	case "call_kubectl":
-		return e.validateCallKubectlOperation(operation, resource)
 	case "kubectl_resources":
 		return e.validateResourcesOperation(operation)
 	case "kubectl_workloads":
@@ -116,69 +106,6 @@ func (e *KubectlToolExecutor) validateCombination(toolName, operation, resource 
 	default:
 		return fmt.Errorf("unknown tool: %s", toolName)
 	}
-}
-
-// validateCallKubectlOperation validates operations for the unified call_kubectl tool
-func (e *KubectlToolExecutor) validateCallKubectlOperation(operation, resource string) error {
-	validReadOnlyOps := []string{"get", "describe", "logs", "events", "top", "cluster-info", "api-resources", "api-versions", "explain", "diff", "auth"}
-	validWriteOps := []string{"create", "delete", "apply", "patch", "replace", "run", "expose", "scale", "autoscale", "rollout", "label", "annotate", "set", "exec", "cp", "config", "certificate"}
-	validAdminOps := []string{"cordon", "uncordon", "drain", "taint"}
-
-	for _, validOp := range validReadOnlyOps {
-		if operation == validOp {
-			if operation == "auth" && resource != "can-i" && resource != "" {
-				return fmt.Errorf("auth operation requires 'can-i' as resource or empty string")
-			}
-			return nil
-		}
-	}
-
-	for _, validOp := range validWriteOps {
-		if operation == validOp {
-			if operation == "rollout" {
-				validSubcmds := []string{"status", "history", "undo", "restart", "pause", "resume"}
-				for _, subcmd := range validSubcmds {
-					if resource == subcmd {
-						return nil
-					}
-				}
-				return fmt.Errorf("invalid rollout subcommand '%s'. Valid subcommands: %s",
-					resource, strings.Join(validSubcmds, ", "))
-			}
-			if operation == "certificate" {
-				validSubcmds := []string{"approve", "deny"}
-				for _, subcmd := range validSubcmds {
-					if resource == subcmd {
-						return nil
-					}
-				}
-				return fmt.Errorf("invalid certificate subcommand '%s'. Valid subcommands: %s",
-					resource, strings.Join(validSubcmds, ", "))
-			}
-			if operation == "config" {
-				validSubcmds := []string{"current-context", "get-contexts", "use-context"}
-				for _, subcmd := range validSubcmds {
-					if resource == subcmd {
-						return nil
-					}
-				}
-				return fmt.Errorf("invalid config subcommand '%s'. Valid subcommands: %s",
-					resource, strings.Join(validSubcmds, ", "))
-			}
-			return nil
-		}
-	}
-
-	for _, validOp := range validAdminOps {
-		if operation == validOp {
-			return nil
-		}
-	}
-
-	allOps := append(validReadOnlyOps, validWriteOps...)
-	allOps = append(allOps, validAdminOps...)
-	return fmt.Errorf("invalid operation '%s' for call_kubectl tool. Valid operations: %s",
-		operation, strings.Join(allOps, ", "))
 }
 
 // validateResourcesOperation validates operations for the resources tool
@@ -346,71 +273,6 @@ func (e *KubectlToolExecutor) buildCommand(kubectlCommand, resource, args string
 	}
 
 	return strings.Join(parts, " ")
-}
-
-// checkAccessLevel validates the command against the configured access level
-func (e *KubectlToolExecutor) checkAccessLevel(command string, cfg *config.ConfigData) error {
-	// Parse the command to determine its category
-	category := e.determineCommandCategory(command)
-
-	switch cfg.AccessLevel {
-	case "readonly":
-		if category != "read-only" {
-			return fmt.Errorf("command requires %s access, but current access level is read-only", category)
-		}
-	case "readwrite":
-		if category == "admin" {
-			return fmt.Errorf("command requires admin access, but current access level is read-write")
-		}
-	case "admin":
-		// Admin can execute all commands
-	default:
-		return fmt.Errorf("unknown access level: %s", cfg.AccessLevel)
-	}
-
-	return nil
-}
-
-// determineCommandCategory determines if a command is read-only, read-write, or admin
-func (e *KubectlToolExecutor) determineCommandCategory(command string) string {
-	// Extract the base command
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return "read-only"
-	}
-
-	baseCmd := parts[0]
-
-	// Check if it's a read-only command
-	readOnlyCommands := GetReadOnlyKubectlCommands()
-	for _, cmd := range readOnlyCommands {
-		if cmd.Name == baseCmd {
-			return "read-only"
-		}
-	}
-
-	// Check if it's an admin command
-	adminCommands := GetAdminKubectlCommands()
-	for _, cmd := range adminCommands {
-		if cmd.Name == baseCmd {
-			return "admin"
-		}
-	}
-
-	// Special handling for complex commands
-	if baseCmd == "rollout" && len(parts) > 1 {
-		// rollout status/history are read-only
-		if parts[1] == "status" || parts[1] == "history" {
-			return "read-only"
-		}
-	}
-
-	if baseCmd == "auth" && len(parts) > 1 && parts[1] == "can-i" {
-		return "read-only"
-	}
-
-	// Default to read-write for other commands
-	return "read-write"
 }
 
 // GetCommandForValidation returns the constructed command for security validation

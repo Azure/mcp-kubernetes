@@ -42,9 +42,9 @@ type ConfigData struct {
 // NewConfig creates and returns a new configuration instance
 func NewConfig() *ConfigData {
 	return &ConfigData{
-		AdditionalTools:       make(map[string]bool),
-		Timeout:               60,
-		SecurityConfig:        security.NewSecurityConfig(),
+		AdditionalTools: make(map[string]bool),
+		Timeout:         60,
+		SecurityConfig:  security.NewSecurityConfig(),
 		Transport:       "stdio",
 		Port:            8000,
 		AccessLevel:     "readonly",

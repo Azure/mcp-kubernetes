@@ -482,9 +482,9 @@ func TestRegisterKubectlTools_DefaultsToReadOnly(t *testing.T) {
 func TestCallKubectlToolStructure(t *testing.T) {
 	// Test that call_kubectl tool has simplified structure with only args parameter
 	testCases := []struct {
-		name         string
-		accessLevel  string
-		mustContain  []string
+		name        string
+		accessLevel string
+		mustContain []string
 	}{
 		{
 			name:        "readonly",
@@ -501,7 +501,7 @@ func TestCallKubectlToolStructure(t *testing.T) {
 			mustContain: []string{
 				"Pass kubectl command arguments directly",
 				"get pods -n default",
-				"create deployment nginx",
+				"create -f deployment.yaml",
 			},
 		},
 		{

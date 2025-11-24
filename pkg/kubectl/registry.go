@@ -379,20 +379,12 @@ Allowed commands:
 
 Examples:
 - args='get pods -n default'
-- args='get pods --all-namespaces -o wide'
 - args='describe deployment myapp -n production'
 - args='logs nginx-pod -f'
-- args='logs -l app=nginx --all-containers=true'
-- args='events --all-namespaces'
 - args='top pods'
-- args='top nodes'
-- args='cluster-info'
-- args='api-resources --namespaced=true'
+- args='events --all-namespaces'
 - args='explain pods.spec.containers'
-- args='diff -f deployment.yaml'
-- args='auth can-i create pods'
-- args='config current-context'
-- args='config get-contexts'`
+- args='auth can-i create pods'`
 	} else if accessLevel == AccessLevelReadWrite {
 		description = `Execute kubectl commands with read and write access.
 
@@ -405,23 +397,13 @@ Config: config current-context, config get-contexts, config use-context
 
 Examples:
 - args='get pods -n default'
-- args='create deployment nginx --image=nginx'
 - args='create -f deployment.yaml'
-- args='delete pod nginx-pod'
 - args='apply -f deployment.yaml'
-- args='patch pod nginx-pod -p "{\"spec\":{\"containers\":[{\"name\":\"nginx\",\"image\":\"nginx:1.20\"}]}}"'
-- args='replace --force -f pod.yaml'
-- args='run nginx --image=nginx'
-- args='expose deployment nginx --port=80'
+- args='delete pod nginx-pod'
 - args='scale deployment myapp --replicas=3'
-- args='autoscale deployment foo --min=2 --max=10'
 - args='rollout status deployment/myapp'
-- args='rollout undo deployment/myapp'
 - args='label pods foo unhealthy=true'
-- args='annotate pods foo description="my frontend"'
-- args='set image deployment/nginx nginx=nginx:1.20'
-- args='exec nginx-pod -- ls /usr/share/nginx/html'
-- args='cp /tmp/foo nginx-pod:/tmp/bar'
+- args='exec nginx-pod -- date'
 - args='config use-context my-cluster-context'`
 	} else {
 		description = `Execute kubectl commands with full admin access.
@@ -436,16 +418,12 @@ Config: config current-context, config get-contexts, config use-context
 
 Examples:
 - args='get pods -n default'
-- args='create -f deployment.yaml'
-- args='delete pod nginx-pod'
 - args='apply -f deployment.yaml'
 - args='scale deployment myapp --replicas=3'
 - args='cordon worker-1'
-- args='uncordon worker-1'
 - args='drain worker-1 --ignore-daemonsets'
-- args='taint nodes worker-1 dedicated=special-user:NoSchedule'
-- args='certificate approve my-cert-csr'
-- args='config use-context my-cluster-context'`
+- args='taint nodes worker-1 dedicated=special:NoSchedule'
+- args='certificate approve my-cert-csr'`
 	}
 
 	return mcp.NewTool("call_kubectl",
