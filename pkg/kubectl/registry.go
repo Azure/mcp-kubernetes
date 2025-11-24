@@ -40,7 +40,18 @@ type toolRegistration struct {
 }
 
 // RegisterKubectlTools returns kubectl tools filtered by access level
-func RegisterKubectlTools(accessLevel string) []mcp.Tool {
+// If useUnifiedTool is true, returns a single call_kubectl tool instead of multiple specialized tools
+func RegisterKubectlTools(accessLevel string, useUnifiedTool bool) []mcp.Tool {
+	// Normalize access level
+	if !isValidAccessLevel(accessLevel) {
+		accessLevel = AccessLevelReadOnly // Default to readonly for safety
+	}
+
+	// If unified tool is enabled, return only the call_kubectl tool
+	if useUnifiedTool {
+		return []mcp.Tool{createCallKubectlTool(accessLevel)}
+	}
+
 	// Define tool registry with access requirements
 	toolRegistry := []toolRegistration{
 		{creator: toolCreator(createResourcesTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
@@ -49,11 +60,6 @@ func RegisterKubectlTools(accessLevel string) []mcp.Tool {
 		{creator: toolCreator(createConfigTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
 		{creator: toolCreatorSimple(createWorkloadsTool), minAccess: AccessLevelReadWrite},
 		{creator: toolCreatorSimple(createMetadataTool), minAccess: AccessLevelReadWrite},
-	}
-
-	// Normalize access level
-	if !isValidAccessLevel(accessLevel) {
-		accessLevel = AccessLevelReadOnly // Default to readonly for safety
 	}
 
 	var tools []mcp.Tool
@@ -354,6 +360,103 @@ Examples:
 	)
 }
 
+// createCallKubectlTool creates a unified kubectl tool that combines all operations
+func createCallKubectlTool(accessLevel string) mcp.Tool {
+	var description string
+
+	readOnly := accessLevel == AccessLevelReadOnly
+
+	if readOnly {
+		description = `Execute kubectl commands with read-only access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+- get, describe, logs, events, top
+- cluster-info, api-resources, api-versions, explain
+- diff, auth can-i
+- config current-context, config get-contexts
+
+Examples:
+- args='get pods -n default'
+- args='get pods --all-namespaces -o wide'
+- args='describe deployment myapp -n production'
+- args='logs nginx-pod -f'
+- args='logs -l app=nginx --all-containers=true'
+- args='events --all-namespaces'
+- args='top pods'
+- args='top nodes'
+- args='cluster-info'
+- args='api-resources --namespaced=true'
+- args='explain pods.spec.containers'
+- args='diff -f deployment.yaml'
+- args='auth can-i create pods'
+- args='config current-context'
+- args='config get-contexts'`
+	} else if accessLevel == AccessLevelReadWrite {
+		description = `Execute kubectl commands with read and write access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+Read: get, describe, logs, events, top, cluster-info, api-resources, api-versions, explain, diff, auth can-i
+Write: create, delete, apply, patch, replace, run, expose, scale, autoscale, rollout, label, annotate, set, exec, cp
+Config: config current-context, config get-contexts, config use-context
+
+Examples:
+- args='get pods -n default'
+- args='create deployment nginx --image=nginx'
+- args='create -f deployment.yaml'
+- args='delete pod nginx-pod'
+- args='apply -f deployment.yaml'
+- args='patch pod nginx-pod -p "{\"spec\":{\"containers\":[{\"name\":\"nginx\",\"image\":\"nginx:1.20\"}]}}"'
+- args='replace --force -f pod.yaml'
+- args='run nginx --image=nginx'
+- args='expose deployment nginx --port=80'
+- args='scale deployment myapp --replicas=3'
+- args='autoscale deployment foo --min=2 --max=10'
+- args='rollout status deployment/myapp'
+- args='rollout undo deployment/myapp'
+- args='label pods foo unhealthy=true'
+- args='annotate pods foo description="my frontend"'
+- args='set image deployment/nginx nginx=nginx:1.20'
+- args='exec nginx-pod -- ls /usr/share/nginx/html'
+- args='cp /tmp/foo nginx-pod:/tmp/bar'
+- args='config use-context my-cluster-context'`
+	} else {
+		description = `Execute kubectl commands with full admin access.
+
+Pass kubectl command arguments directly. All standard kubectl flags are supported.
+
+Allowed commands:
+Read: get, describe, logs, events, top, cluster-info, api-resources, api-versions, explain, diff, auth can-i
+Write: create, delete, apply, patch, replace, run, expose, scale, autoscale, rollout, label, annotate, set, exec, cp
+Admin: cordon, uncordon, drain, taint, certificate approve, certificate deny
+Config: config current-context, config get-contexts, config use-context
+
+Examples:
+- args='get pods -n default'
+- args='create -f deployment.yaml'
+- args='delete pod nginx-pod'
+- args='apply -f deployment.yaml'
+- args='scale deployment myapp --replicas=3'
+- args='cordon worker-1'
+- args='uncordon worker-1'
+- args='drain worker-1 --ignore-daemonsets'
+- args='taint nodes worker-1 dedicated=special-user:NoSchedule'
+- args='certificate approve my-cert-csr'
+- args='config use-context my-cluster-context'`
+	}
+
+	return mcp.NewTool("call_kubectl",
+		mcp.WithDescription(description),
+		mcp.WithString("args",
+			mcp.Required(),
+			mcp.Description("Direct kubectl command arguments (e.g., 'get pods -n default', 'describe deployment myapp', 'logs nginx-pod -f')"),
+		),
+	)
+}
+
 // createConfigTool creates the configuration tool
 func createConfigTool(readOnly bool) mcp.Tool {
 	var description string
@@ -435,6 +538,20 @@ func MapOperationToCommand(toolName, operation, resource string) (string, error)
 	// This function will be used by the executor to map operations to actual kubectl commands
 	// For now, return a basic mapping
 	switch toolName {
+	case "call_kubectl":
+		if operation == "rollout" {
+			return "rollout " + resource, nil
+		}
+		if operation == "auth" {
+			return "auth " + resource, nil
+		}
+		if operation == "certificate" {
+			return "certificate " + resource, nil
+		}
+		if operation == "config" {
+			return "config " + resource, nil
+		}
+		return operation, nil
 	case "kubectl_resources":
 		return operation, nil
 	case "kubectl_workloads":
