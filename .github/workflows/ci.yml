@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
 
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
 
@@ -76,7 +76,7 @@ jobs:
       tree-state: ${{ steps.ldflags.outputs.tree-state }}
     steps:
       - id: checkout
-        uses: actions/checkout@71cf2267d89c5cb81562390fa70a37fa40b1305e # tag=v2.3.4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # tag=v2.3.4
         with:
           fetch-depth: 0
       - id: ldflags
@@ -92,7 +92,7 @@ jobs:
     needs: [lint, test, args]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
 
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
 
