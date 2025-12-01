@@ -89,6 +89,7 @@ Config your MCP servers in [Claude Desktop](https://claude.ai/download), [Cursor
 Environment variables:
 
 - `KUBECONFIG`: Path to your kubeconfig file, e.g. `/home/<username>/.kube/config`.
+- `USE_LEGACY_TOOLS`: Set to `true` to use multiple specialized kubectl tools instead of the unified `call_kubectl` tool (default: `false`).
 
 Command line arguments:
 
@@ -104,18 +105,34 @@ Usage of ./mcp-kubernetes:
       --transport string          Transport mechanism to use (stdio, sse or streamable-http) (default "stdio")
 ```
 
+### Unified vs Legacy Tools
+
+By default, mcp-kubernetes uses a single unified `call_kubectl` tool that consolidates all kubectl operations into one tool interface. This significantly reduces context consumption while maintaining full functionality.
+
+To use the legacy mode with multiple specialized tools (6-7 separate tools), set the environment variable:
+
+```json
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "mcp-kubernetes",
+      "env": {
+        "USE_LEGACY_TOOLS": "true"
+      }
+    }
+  }
+}
+```
+
 ### Access Levels
 
-The `--access-level` flag controls what operations are allowed and which tools are available:
+The `--access-level` flag controls what operations are allowed:
 
 - **`readonly`** (default): Only read operations are allowed (get, describe, logs, etc.)
-  - Available tools: 4 kubectl tools for viewing resources
 - **`readwrite`**: Read and write operations are allowed (create, delete, apply, etc.)
-  - Available tools: 6 kubectl tools for managing resources
 - **`admin`**: All operations are allowed, including admin operations (cordon, drain, taint, etc.)
-  - Available tools: All 7 kubectl tools including node management
 
-Tools are filtered at registration time based on the access level, so AI assistants only see tools they can actually use.
+Tools and operations are filtered at registration time based on the access level, so AI assistants only see operations they can actually use.
 
 Example configurations:
 
@@ -176,9 +193,31 @@ Switch to the production context
 
 ## Available Tools
 
-The mcp-kubernetes server provides consolidated kubectl tools that group related operations together. Tools are automatically filtered based on your access level.
+### Unified Tool (Default)
 
-### Kubectl Tools
+By default, mcp-kubernetes uses a single unified `call_kubectl` tool that handles all kubectl operations. This approach significantly reduces context consumption compared to the legacy multi-tool approach.
+
+**call_kubectl** - Execute kubectl commands
+- **Available in**: All access levels (operations filtered by access level)
+- **Parameters**:
+  - `command`: The full kubectl command to execute (e.g., "get pods -n default", "apply -f deployment.yaml")
+- **Examples**:
+  ```bash
+  # Get pods
+  command: "get pods -n default"
+
+  # Apply configuration
+  command: "apply -f deployment.yaml"
+
+  # Scale deployment
+  command: "scale deployment nginx --replicas=3"
+  ```
+
+### Legacy Tools (Optional)
+
+When `USE_LEGACY_TOOLS=true`, the mcp-kubernetes server provides multiple specialized kubectl tools that group related operations together. Tools are automatically filtered based on your access level.
+
+#### Kubectl Tools
 
 <details>
 <summary><b>kubectl_resources</b> - Manage Kubernetes resources</summary>
@@ -385,7 +424,7 @@ args: "my-cluster-context"
 
 </details>
 
-### Additional Tools
+#### Additional Tools
 
 <details>
 <summary><b>helm</b> - Helm package manager</summary>
