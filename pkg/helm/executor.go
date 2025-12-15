@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Azure/mcp-kubernetes/pkg/command"
@@ -20,7 +21,7 @@ func NewExecutor() *HelmExecutor {
 }
 
 // Execute handles helm command execution
-func (e *HelmExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *HelmExecutor) Execute(ctx context.Context, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	helmCmd, ok := params["command"].(string)
 	if !ok {
 		return "", fmt.Errorf("invalid command parameter")

@@ -1,6 +1,7 @@
 package kubectl
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -399,7 +400,7 @@ func TestKubectlToolExecutor_Execute(t *testing.T) {
 				},
 			}
 
-			_, err := executor.Execute(tt.params, cfg)
+			_, err := executor.Execute(context.Background(), tt.params, cfg)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("Execute() error = nil, wantErr %v", tt.wantErr)

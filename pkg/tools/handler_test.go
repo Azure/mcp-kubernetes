@@ -16,7 +16,7 @@ type mockExecutor struct {
 	result      string
 }
 
-func (m *mockExecutor) Execute(args map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (m *mockExecutor) Execute(ctx context.Context, args map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	if m.shouldError {
 		return "", errors.New("mock execution error")
 	}

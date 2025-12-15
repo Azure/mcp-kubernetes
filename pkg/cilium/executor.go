@@ -1,6 +1,7 @@
 package cilium
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Azure/mcp-kubernetes/pkg/command"
@@ -21,7 +22,7 @@ func NewExecutor() *CiliumExecutor {
 }
 
 // Execute handles cilium command execution
-func (e *CiliumExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *CiliumExecutor) Execute(ctx context.Context, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	ciliumCmd, ok := params["command"].(string)
 	if !ok {
 		return "", fmt.Errorf("invalid command parameter")
