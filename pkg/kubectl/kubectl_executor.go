@@ -1,6 +1,7 @@
 package kubectl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -21,7 +22,7 @@ func NewKubectlToolExecutor() *KubectlToolExecutor {
 }
 
 // Execute processes structured kubectl commands with operation/resource/args parameters
-func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *KubectlToolExecutor) Execute(ctx context.Context, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	// Get the tool name from params (injected by handler)
 	toolName, _ := params["_tool_name"].(string)
 
@@ -42,7 +43,7 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 		}
 
 		// Execute the command directly
-		return e.executor.executeKubectlCommand(fullCommand, "", cfg)
+		return e.executor.executeKubectlCommand(ctx, fullCommand, "", cfg)
 	}
 
 	// Handle legacy specialized tools with operation/resource/args parameters
@@ -83,7 +84,7 @@ func (e *KubectlToolExecutor) Execute(params map[string]interface{}, cfg *config
 	}
 
 	// Execute the command directly
-	return e.executor.executeKubectlCommand(fullCommand, "", cfg)
+	return e.executor.executeKubectlCommand(ctx, fullCommand, "", cfg)
 }
 
 // validateCombination validates if the operation/resource combination is valid for the tool

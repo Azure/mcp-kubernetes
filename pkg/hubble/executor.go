@@ -1,6 +1,7 @@
 package hubble
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Azure/mcp-kubernetes/pkg/command"
@@ -21,7 +22,7 @@ func NewExecutor() *HubbleExecutor {
 }
 
 // Execute handles hubble command execution
-func (e *HubbleExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *HubbleExecutor) Execute(ctx context.Context, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	hubbleCmd, ok := params["command"].(string)
 	if !ok {
 		return "", fmt.Errorf("invalid command parameter")

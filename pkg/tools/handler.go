@@ -21,7 +21,7 @@ func CreateToolHandler(executor CommandExecutor, cfg *config.ConfigData) func(ct
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		result, err := executor.Execute(args, cfg)
+		result, err := executor.Execute(ctx, args, cfg)
 		if cfg.TelemetryService != nil {
 			operation, _ := args["operation"].(string)
 			cfg.TelemetryService.TrackToolInvocation(ctx, req.Params.Name, operation, err == nil)
@@ -51,7 +51,7 @@ func CreateToolHandlerWithName(executor CommandExecutor, cfg *config.ConfigData,
 		// Inject the tool name into the arguments
 		args["_tool_name"] = toolName
 
-		result, err := executor.Execute(args, cfg)
+		result, err := executor.Execute(ctx, args, cfg)
 		if cfg.TelemetryService != nil {
 			operation, _ := args["operation"].(string)
 			cfg.TelemetryService.TrackToolInvocation(ctx, toolName, operation, err == nil)

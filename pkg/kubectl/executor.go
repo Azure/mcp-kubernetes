@@ -1,6 +1,7 @@
 package kubectl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -22,7 +23,7 @@ func NewExecutor() *KubectlExecutor {
 }
 
 // executeKubectlCommand executes a kubectl command with the given arguments
-func (e *KubectlExecutor) executeKubectlCommand(cmd string, args string, cfg *config.ConfigData) (string, error) {
+func (e *KubectlExecutor) executeKubectlCommand(ctx context.Context, cmd string, args string, cfg *config.ConfigData) (string, error) {
 	process := command.NewShellProcess("kubectl", cfg.Timeout)
 
 	var fullCmd string
@@ -41,7 +42,7 @@ func (e *KubectlExecutor) executeKubectlCommand(cmd string, args string, cfg *co
 }
 
 // Execute handles general kubectl command execution (for backward compatibility)
-func (e *KubectlExecutor) Execute(params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *KubectlExecutor) Execute(ctx context.Context, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	kubectlCmd, ok := params["command"].(string)
 	if !ok {
 		return "", fmt.Errorf("invalid command parameter")
@@ -55,11 +56,11 @@ func (e *KubectlExecutor) Execute(params map[string]interface{}, cfg *config.Con
 	}
 
 	// Execute the command
-	return e.executeKubectlCommand(kubectlCmd, "", cfg)
+	return e.executeKubectlCommand(ctx, kubectlCmd, "", cfg)
 }
 
 // ExecuteSpecificCommand executes a specific kubectl command with the given arguments
-func (e *KubectlExecutor) ExecuteSpecificCommand(cmd string, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
+func (e *KubectlExecutor) ExecuteSpecificCommand(ctx context.Context, cmd string, params map[string]interface{}, cfg *config.ConfigData) (string, error) {
 	args, ok := params["args"].(string)
 	if !ok {
 		args = ""
@@ -79,5 +80,5 @@ func (e *KubectlExecutor) ExecuteSpecificCommand(cmd string, params map[string]i
 	}
 
 	// Execute the command
-	return e.executeKubectlCommand(cmd, args, cfg)
+	return e.executeKubectlCommand(ctx, cmd, args, cfg)
 }
