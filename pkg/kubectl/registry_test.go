@@ -46,9 +46,9 @@ func TestRegisterKubectlTools_UnifiedMode(t *testing.T) {
 	// Verify description contains key indicators
 	desc := tools[0].Description
 	expectedContent := []string{
-		"Pass kubectl command arguments directly",
-		"get pods",
-		"args=",
+		"Pass full kubectl command including 'kubectl' prefix",
+		"kubectl get pods",
+		"command=",
 	}
 	for _, content := range expectedContent {
 		if !strings.Contains(desc, content) {
@@ -490,27 +490,27 @@ func TestCallKubectlToolStructure(t *testing.T) {
 			name:        "readonly",
 			accessLevel: "readonly",
 			mustContain: []string{
-				"Pass kubectl command arguments directly",
-				"get pods -n default",
-				"describe deployment myapp",
+				"Pass full kubectl command including 'kubectl' prefix",
+				"kubectl get pods -n default",
+				"kubectl describe deployment myapp",
 			},
 		},
 		{
 			name:        "readwrite",
 			accessLevel: "readwrite",
 			mustContain: []string{
-				"Pass kubectl command arguments directly",
-				"get pods -n default",
-				"create -f deployment.yaml",
+				"Pass full kubectl command including 'kubectl' prefix",
+				"kubectl get pods -n default",
+				"kubectl create -f deployment.yaml",
 			},
 		},
 		{
 			name:        "admin",
 			accessLevel: "admin",
 			mustContain: []string{
-				"Pass kubectl command arguments directly",
-				"get pods -n default",
-				"cordon worker-1",
+				"Pass full kubectl command including 'kubectl' prefix",
+				"kubectl get pods -n default",
+				"kubectl cordon worker-1",
 			},
 		},
 	}

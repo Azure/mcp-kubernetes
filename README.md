@@ -200,17 +200,17 @@ By default, mcp-kubernetes uses a single unified `call_kubectl` tool that handle
 **call_kubectl** - Execute kubectl commands
 - **Available in**: All access levels (operations filtered by access level)
 - **Parameters**:
-  - `command`: The full kubectl command to execute (e.g., "get pods -n default", "apply -f deployment.yaml")
+  - `command`: The full kubectl command to execute including 'kubectl' prefix (e.g., "kubectl get pods -n default", "kubectl apply -f deployment.yaml")
 - **Examples**:
   ```bash
   # Get pods
-  command: "get pods -n default"
+  command: "kubectl get pods -n default"
 
   # Apply configuration
-  command: "apply -f deployment.yaml"
+  command: "kubectl apply -f deployment.yaml"
 
   # Scale deployment
-  command: "scale deployment nginx --replicas=3"
+  command: "kubectl scale deployment nginx --replicas=3"
   ```
 
 ### Legacy Tools (Optional)
@@ -427,7 +427,7 @@ args: "my-cluster-context"
 #### Additional Tools
 
 <details>
-<summary><b>helm</b> - Helm package manager</summary>
+<summary><b>call_helm</b> - Helm package manager</summary>
 
 **Available when**: `--additional-tools=helm` is specified
 
@@ -446,7 +446,7 @@ command: "list --all-namespaces"
 </details>
 
 <details>
-<summary><b>cilium</b> - Cilium CNI commands</summary>
+<summary><b>call_cilium</b> - Cilium CNI commands</summary>
 
 **Available when**: `--additional-tools=cilium` is specified
 
@@ -465,7 +465,7 @@ command: "status"
 </details>
 
 <details>
-<summary><b>hubble</b> - Hubble observability commands</summary>
+<summary><b>call_hubble</b> - Hubble observability commands</summary>
 
 **Available when**: `--additional-tools=hubble` is specified
 

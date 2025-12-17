@@ -26,15 +26,15 @@ func (e *KubectlToolExecutor) Execute(ctx context.Context, params map[string]int
 	// Get the tool name from params (injected by handler)
 	toolName, _ := params["_tool_name"].(string)
 
-	// Handle call_kubectl with simplified args-only parameter
+	// Handle call_kubectl with command parameter
 	if toolName == "call_kubectl" {
-		args, ok := params["args"].(string)
+		command, ok := params["command"].(string)
 		if !ok {
-			return "", fmt.Errorf("args parameter is required and must be a string")
+			return "", fmt.Errorf("command parameter is required and must be a string")
 		}
 
-		// Use args directly as the kubectl command
-		fullCommand := args
+		// Remove "kubectl " prefix if present, as it will be added by executeKubectlCommand
+		fullCommand := strings.TrimPrefix(command, "kubectl ")
 
 		// Validate the command against security settings (includes access level and namespace checks)
 		validator := security.NewValidator(cfg.SecurityConfig)
