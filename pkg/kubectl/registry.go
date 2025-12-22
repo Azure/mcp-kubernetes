@@ -376,42 +376,42 @@ func createCallKubectlTool(accessLevel string) mcp.Tool {
 	case AccessLevelReadOnly:
 		description = fmt.Sprintf(`Execute kubectl commands with read-only access.
 
-Pass kubectl command arguments directly. All standard kubectl flags are supported.
+Pass full kubectl command including 'kubectl' prefix. All standard kubectl flags are supported.
 
 Allowed commands:
 %s
 
 Examples:
-- args='get pods -n default'
-- args='describe deployment myapp -n production'
-- args='logs nginx-pod -f'
-- args='top pods'
-- args='events --all-namespaces'
-- args='explain pods.spec.containers'
-- args='auth can-i create pods'`, readCommands)
+- command='kubectl get pods -n default'
+- command='kubectl describe deployment myapp -n production'
+- command='kubectl logs nginx-pod -f'
+- command='kubectl top pods'
+- command='kubectl events --all-namespaces'
+- command='kubectl explain pods.spec.containers'
+- command='kubectl auth can-i create pods'`, readCommands)
 	case AccessLevelReadWrite:
 		description = fmt.Sprintf(`Execute kubectl commands with read and write access.
 
-Pass kubectl command arguments directly. All standard kubectl flags are supported.
+Pass full kubectl command including 'kubectl' prefix. All standard kubectl flags are supported.
 
 Allowed commands:
 Read: %s
 Write: %s
 
 Examples:
-- args='get pods -n default'
-- args='create -f deployment.yaml'
-- args='apply -f deployment.yaml'
-- args='delete pod nginx-pod'
-- args='scale deployment myapp --replicas=3'
-- args='rollout status deployment/myapp'
-- args='label pods foo unhealthy=true'
-- args='exec nginx-pod -- date'
-- args='config use-context my-cluster-context'`, readCommands, writeCommands)
+- command='kubectl get pods -n default'
+- command='kubectl create -f deployment.yaml'
+- command='kubectl apply -f deployment.yaml'
+- command='kubectl delete pod nginx-pod'
+- command='kubectl scale deployment myapp --replicas=3'
+- command='kubectl rollout status deployment/myapp'
+- command='kubectl label pods foo unhealthy=true'
+- command='kubectl exec nginx-pod -- date'
+- command='kubectl config use-context my-cluster-context'`, readCommands, writeCommands)
 	case AccessLevelAdmin:
 		description = fmt.Sprintf(`Execute kubectl commands with full admin access.
 
-Pass kubectl command arguments directly. All standard kubectl flags are supported.
+Pass full kubectl command including 'kubectl' prefix. All standard kubectl flags are supported.
 
 Allowed commands:
 Read: %s
@@ -419,32 +419,32 @@ Write: %s
 Admin: %s
 
 Examples:
-- args='get pods -n default'
-- args='apply -f deployment.yaml'
-- args='scale deployment myapp --replicas=3'
-- args='cordon worker-1'
-- args='drain worker-1 --ignore-daemonsets'
-- args='taint nodes worker-1 dedicated=special:NoSchedule'
-- args='certificate approve my-cert-csr'`, readCommands, writeCommands, adminCommands)
+- command='kubectl get pods -n default'
+- command='kubectl apply -f deployment.yaml'
+- command='kubectl scale deployment myapp --replicas=3'
+- command='kubectl cordon worker-1'
+- command='kubectl drain worker-1 --ignore-daemonsets'
+- command='kubectl taint nodes worker-1 dedicated=special:NoSchedule'
+- command='kubectl certificate approve my-cert-csr'`, readCommands, writeCommands, adminCommands)
 	default:
 		description = fmt.Sprintf(`Execute kubectl commands with unknown access level (defaulting to read-only).
 
-Pass kubectl command arguments directly. All standard kubectl flags are supported.
+Pass full kubectl command including 'kubectl' prefix. All standard kubectl flags are supported.
 
 Allowed commands:
 %s
 
 Examples:
-- args='get pods -n default'
-- args='describe deployment myapp -n production'
-- args='logs nginx-pod -f'`, readCommands)
+- command='kubectl get pods -n default'
+- command='kubectl describe deployment myapp -n production'
+- command='kubectl logs nginx-pod -f'`, readCommands)
 	}
 
 	return mcp.NewTool("call_kubectl",
 		mcp.WithDescription(description),
-		mcp.WithString("args",
+		mcp.WithString("command",
 			mcp.Required(),
-			mcp.Description("Direct kubectl command arguments (e.g., 'get pods -n default', 'describe deployment myapp', 'logs nginx-pod -f')"),
+			mcp.Description("Full kubectl command to execute (e.g., 'kubectl get pods -n default', 'kubectl describe deployment myapp', 'kubectl logs nginx-pod -f')"),
 		),
 	)
 }
