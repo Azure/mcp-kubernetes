@@ -30,6 +30,11 @@ const (
 	AccessLevelAdmin     = "admin"
 )
 
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // toolCreator is a function that creates a tool, possibly with read-only restrictions
 type toolCreator func(readOnly bool) mcp.Tool
 
@@ -188,7 +193,8 @@ Examples:
 		operationDesc = "The operation to perform: get, describe, create, delete, apply, patch, replace, cordon, uncordon, drain, taint"
 	}
 
-	return mcp.NewTool("kubectl_resources",
+	// Build tool options
+	opts := []mcp.ToolOption{
 		mcp.WithDescription(description),
 		mcp.WithString("operation",
 			mcp.Required(),
@@ -202,7 +208,22 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Additional arguments like resource names, namespaces, and flags"),
 		),
-	)
+	}
+
+	// Add annotation based on read-only mode
+	if readOnly {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:        "Kubectl Resources",
+			ReadOnlyHint: boolPtr(true),
+		}))
+	} else {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Kubectl Resources",
+			DestructiveHint: boolPtr(true),
+		}))
+	}
+
+	return mcp.NewTool("kubectl_resources", opts...)
 }
 
 // createWorkloadsTool creates the workload management tool
@@ -245,6 +266,10 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Additional arguments specific to the operation"),
 		),
+		mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Kubectl Workloads",
+			DestructiveHint: boolPtr(true),
+		}),
 	)
 }
 
@@ -280,6 +305,10 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Resource names and metadata changes"),
 		),
+		mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Kubectl Metadata",
+			DestructiveHint: boolPtr(true),
+		}),
 	)
 }
 
@@ -322,6 +351,10 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Resource names and operation-specific flags"),
 		),
+		mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Kubectl Diagnostics",
+			DestructiveHint: boolPtr(true),
+		}),
 	)
 }
 
@@ -361,6 +394,10 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Additional flags and options"),
 		),
+		mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:        "Kubectl Cluster",
+			ReadOnlyHint: boolPtr(true),
+		}),
 	)
 }
 
@@ -440,13 +477,29 @@ Examples:
 - command='kubectl logs nginx-pod -f'`, readCommands)
 	}
 
-	return mcp.NewTool("call_kubectl",
+	// Build tool options
+	opts := []mcp.ToolOption{
 		mcp.WithDescription(description),
 		mcp.WithString("command",
 			mcp.Required(),
 			mcp.Description("Full kubectl command to execute (e.g., 'kubectl get pods -n default', 'kubectl describe deployment myapp', 'kubectl logs nginx-pod -f')"),
 		),
-	)
+	}
+
+	// Add annotation based on access level
+	if accessLevel == AccessLevelReadOnly {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:        "Call Kubectl",
+			ReadOnlyHint: boolPtr(true),
+		}))
+	} else {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Call Kubectl",
+			DestructiveHint: boolPtr(true),
+		}))
+	}
+
+	return mcp.NewTool("call_kubectl", opts...)
 }
 
 // createConfigTool creates the configuration tool
@@ -496,7 +549,8 @@ Examples:
 		operationDesc = "The operation to perform: diff, auth, certificate, config"
 	}
 
-	return mcp.NewTool("kubectl_config",
+	// Build tool options
+	opts := []mcp.ToolOption{
 		mcp.WithDescription(description),
 		mcp.WithString("operation",
 			mcp.Required(),
@@ -510,7 +564,22 @@ Examples:
 			mcp.Required(),
 			mcp.Description("Operation-specific arguments"),
 		),
-	)
+	}
+
+	// Add annotation based on read-only mode
+	if readOnly {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:        "Kubectl Config",
+			ReadOnlyHint: boolPtr(true),
+		}))
+	} else {
+		opts = append(opts, mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:           "Kubectl Config",
+			DestructiveHint: boolPtr(true),
+		}))
+	}
+
+	return mcp.NewTool("kubectl_config", opts...)
 }
 
 // GetKubectlToolNames returns the names of all kubectl tools
