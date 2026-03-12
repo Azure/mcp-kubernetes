@@ -210,3 +210,27 @@ func TestValidateCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestNamespaceBypassPrevention(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("default")
+	validator := NewValidator(secConfig)
+
+	tests := []struct {
+		name    string
+		command string
+	}{
+		{"duplicate -n flags", "kubectl get secrets -n default -n kube-system -o yaml"},
+		{"mixed namespace flags", "kubectl get secrets -n default --namespace=kube-system"},
+		{"reverse order bypass", "kubectl get secrets -n kube-system -n default"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tc.command, CommandTypeKubectl)
+			if err == nil {
+				t.Errorf("Command with multiple namespace flags should be rejected: %q", tc.command)
+			}
+		})
+	}
+}

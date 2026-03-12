@@ -198,6 +198,11 @@ func (v *Validator) validateNamespaceScope(command string) error {
 	// Extract namespace from command
 	namespace := v.extractNamespaceFromCommand(command)
 
+	// Reject commands with multiple (ambiguous) namespace flags
+	if namespace == "__AMBIGUOUS_NAMESPACE__" {
+		return &ValidationError{Message: "Error: Command contains multiple namespace flags which is not allowed"}
+	}
+
 	// If command applies to all namespaces, and there are namespace restrictions
 	if namespace == "*" && (len(v.secConfig.allowedNamespaces) > 0 || len(v.secConfig.allowedNamespacesRe) > 0) {
 		return &ValidationError{Message: "Error: Access to all namespaces is restricted by security configuration"}
@@ -265,14 +270,20 @@ func (v *Validator) isConfigWriteOperation(command string) bool {
 	return false
 }
 
-// extractNamespaceFromCommand extracts the namespace from a command
+// extractNamespaceFromCommand extracts the namespace from a command.
+// Returns "__AMBIGUOUS_NAMESPACE__" if multiple namespace flags are detected.
 func (v *Validator) extractNamespaceFromCommand(command string) string {
 	// Check for explicit namespace parameter
 	namespacePattern := `(?:-n|--namespace)[\s=]([^\s]+)`
 	re := regexp.MustCompile(namespacePattern)
-	matches := re.FindStringSubmatch(command)
-	if len(matches) > 1 {
-		return matches[1]
+	allMatches := re.FindAllStringSubmatch(command, -1)
+
+	if len(allMatches) > 1 {
+		// Multiple namespace flags are ambiguous and potentially malicious
+		return "__AMBIGUOUS_NAMESPACE__"
+	}
+	if len(allMatches) == 1 {
+		return allMatches[0][1]
 	}
 
 	// Check if there's a format like <resource>/<name>
