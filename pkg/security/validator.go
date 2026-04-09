@@ -18,13 +18,13 @@ var (
 	KubectlReadOperations = []string{
 		"get", "describe", "explain", "logs", "top", "auth", "config",
 		"cluster-info", "api-resources", "api-versions", "version", "diff",
-		"completion", "help", "kustomize", "options", "plugin", "proxy", "wait", "events",
+		"completion", "help", "kustomize", "options", "plugin", "wait", "events",
 	}
 
 	// KubectlReadWriteOperations defines kubectl operations that modify state but are not admin operations
 	KubectlReadWriteOperations = []string{
 		"create", "delete", "apply", "expose", "run", "set", "rollout", "scale",
-		"autoscale", "label", "annotate", "patch", "replace", "cp", "exec",
+		"autoscale", "label", "annotate", "patch", "replace", "cp", "exec", "proxy",
 	}
 
 	// KubectlAdminOperations defines kubectl operations that require admin privileges
@@ -134,6 +134,11 @@ func (v *Validator) getAdminOperationsList(commandType string) []string {
 
 // ValidateCommand validates a command against all security settings
 func (v *Validator) ValidateCommand(command, commandType string) error {
+	// Check for remote URLs in -f flag
+	if err := v.validateRemoteURL(command, commandType); err != nil {
+		return err
+	}
+
 	// Check access level restrictions
 	if err := v.validateAccessLevel(command, commandType); err != nil {
 		return err
@@ -144,6 +149,22 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 		return err
 	}
 
+	return nil
+}
+
+// validateRemoteURL rejects -f with http/https URLs for kubectl apply/create
+func (v *Validator) validateRemoteURL(command, commandType string) error {
+	if commandType != CommandTypeKubectl {
+		return nil
+	}
+	operation := v.extractOperationFromCommand(command, commandType)
+	if operation != "apply" && operation != "create" {
+		return nil
+	}
+	urlPattern := regexp.MustCompile(`-f\s+https?://`)
+	if urlPattern.MatchString(command) {
+		return &ValidationError{Message: "Error: Remote URLs are not allowed with -f flag; use local file paths only"}
+	}
 	return nil
 }
 

