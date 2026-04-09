@@ -134,11 +134,6 @@ func (v *Validator) getAdminOperationsList(commandType string) []string {
 
 // ValidateCommand validates a command against all security settings
 func (v *Validator) ValidateCommand(command, commandType string) error {
-	// Check for remote URLs in -f flag
-	if err := v.validateRemoteURL(command, commandType); err != nil {
-		return err
-	}
-
 	// Check access level restrictions
 	if err := v.validateAccessLevel(command, commandType); err != nil {
 		return err
@@ -149,22 +144,6 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 		return err
 	}
 
-	return nil
-}
-
-// validateRemoteURL rejects -f with http/https URLs for kubectl apply/create
-func (v *Validator) validateRemoteURL(command, commandType string) error {
-	if commandType != CommandTypeKubectl {
-		return nil
-	}
-	operation := v.extractOperationFromCommand(command, commandType)
-	if operation != "apply" && operation != "create" {
-		return nil
-	}
-	urlPattern := regexp.MustCompile(`-f\s+https?://`)
-	if urlPattern.MatchString(command) {
-		return &ValidationError{Message: "Error: Remote URLs are not allowed with -f flag; use local file paths only"}
-	}
 	return nil
 }
 
