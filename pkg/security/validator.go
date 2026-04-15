@@ -18,13 +18,13 @@ var (
 	KubectlReadOperations = []string{
 		"get", "describe", "explain", "logs", "top", "auth", "config",
 		"cluster-info", "api-resources", "api-versions", "version", "diff",
-		"completion", "help", "kustomize", "options", "plugin", "proxy", "wait", "events",
+		"completion", "help", "kustomize", "options", "plugin", "wait", "events",
 	}
 
 	// KubectlReadWriteOperations defines kubectl operations that modify state but are not admin operations
 	KubectlReadWriteOperations = []string{
 		"create", "delete", "apply", "expose", "run", "set", "rollout", "scale",
-		"autoscale", "label", "annotate", "patch", "replace", "cp", "exec",
+		"autoscale", "label", "annotate", "patch", "replace", "cp", "exec", "proxy",
 	}
 
 	// KubectlAdminOperations defines kubectl operations that require admin privileges

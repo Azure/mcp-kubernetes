@@ -64,7 +64,7 @@ func RegisterKubectlTools(accessLevel string, useUnifiedTool bool) []mcp.Tool {
 	// Define tool registry with access requirements
 	toolRegistry := []toolRegistration{
 		{creator: toolCreator(createResourcesTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
-		{creator: toolCreatorSimple(createDiagnosticsTool), minAccess: AccessLevelReadOnly},
+		{creator: toolCreatorSimple(createDiagnosticsTool), minAccess: AccessLevelReadWrite},
 		{creator: toolCreatorSimple(createClusterTool), minAccess: AccessLevelReadOnly},
 		{creator: toolCreator(createConfigTool), minAccess: AccessLevelReadOnly, readOnlyMode: true},
 		{creator: toolCreatorSimple(createWorkloadsTool), minAccess: AccessLevelReadWrite},

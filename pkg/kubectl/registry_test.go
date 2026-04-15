@@ -366,13 +366,13 @@ func TestRegisterKubectlTools_AccessLevelFiltering(t *testing.T) {
 			accessLevel: "readonly",
 			expectedTools: []string{
 				"kubectl_resources",
-				"kubectl_diagnostics",
 				"kubectl_cluster",
 				"kubectl_config",
 			},
 			unexpectedTools: []string{
 				"kubectl_workloads",
 				"kubectl_metadata",
+				"kubectl_diagnostics",
 			},
 		},
 		{

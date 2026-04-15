@@ -34,6 +34,11 @@ func TestValidatorAccessLevels(t *testing.T) {
 		{"Admin - cordon node", AccessLevelAdmin, "kubectl cordon node1", false, ""},
 		{"Admin - drain node", AccessLevelAdmin, "kubectl drain node1", false, ""},
 
+		// proxy access level tests
+		{"ReadOnly - proxy blocked", AccessLevelReadOnly, "kubectl proxy --port=8001", true, "read-only mode"},
+		{"ReadWrite - proxy allowed", AccessLevelReadWrite, "kubectl proxy --port=8001", false, ""},
+		{"Admin - proxy allowed", AccessLevelAdmin, "kubectl proxy --port=8001", false, ""},
+
 		// Config operations tests
 		{"ReadOnly - config current-context", AccessLevelReadOnly, "config current-context", false, ""},
 		{"ReadOnly - config get-contexts", AccessLevelReadOnly, "config get-contexts", false, ""},
