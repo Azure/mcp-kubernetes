@@ -14,6 +14,33 @@ const (
 )
 
 var (
+	// KubectlBlockedGlobalFlags defines kubectl global flags that can redirect API traffic or inject credentials.
+	// These are blocked at all access levels because they bypass the intent of access-level restrictions
+	// by allowing traffic redirection and credential exfiltration.
+	KubectlBlockedGlobalFlags = []string{
+		"--server=", "--server ",
+		"--token=", "--token ",
+		"--kubeconfig=", "--kubeconfig ",
+		"--context=", "--context ",
+		"--certificate-authority=", "--certificate-authority ",
+		"--client-certificate=", "--client-certificate ",
+		"--client-key=", "--client-key ",
+		"--insecure-skip-tls-verify",
+		"--as=", "--as ",
+		"--as-group=", "--as-group ",
+		"--as-uid=", "--as-uid ",
+	}
+
+	// HelmBlockedGlobalFlags defines helm global flags that can redirect API traffic or inject credentials.
+	HelmBlockedGlobalFlags = []string{
+		"--kube-apiserver=", "--kube-apiserver ",
+		"--kube-token=", "--kube-token ",
+		"--kube-ca-file=", "--kube-ca-file ",
+		"--kube-context=", "--kube-context ",
+		"--kubeconfig=", "--kubeconfig ",
+		"--kube-insecure-skip-tls-verify",
+	}
+
 	// KubectlReadOperations defines kubectl operations that don't modify state
 	KubectlReadOperations = []string{
 		"get", "describe", "explain", "logs", "top", "auth", "config",
@@ -134,6 +161,11 @@ func (v *Validator) getAdminOperationsList(commandType string) []string {
 
 // ValidateCommand validates a command against all security settings
 func (v *Validator) ValidateCommand(command, commandType string) error {
+	// Check for blocked global flags (credential/server redirection flags)
+	if err := v.validateGlobalFlags(command, commandType); err != nil {
+		return err
+	}
+
 	// Check access level restrictions
 	if err := v.validateAccessLevel(command, commandType); err != nil {
 		return err
@@ -144,6 +176,28 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 		return err
 	}
 
+	return nil
+}
+
+// validateGlobalFlags rejects commands that contain flags which can redirect API traffic
+// or inject credentials, regardless of access level.
+func (v *Validator) validateGlobalFlags(command, commandType string) error {
+	var blockedFlags []string
+	switch commandType {
+	case CommandTypeKubectl:
+		blockedFlags = KubectlBlockedGlobalFlags
+	case CommandTypeHelm:
+		blockedFlags = HelmBlockedGlobalFlags
+	default:
+		return nil
+	}
+
+	cmdLower := strings.ToLower(command)
+	for _, flag := range blockedFlags {
+		if strings.Contains(cmdLower, strings.ToLower(flag)) {
+			return &ValidationError{Message: "Error: Global flag '" + flag + "' is not allowed; it can redirect API traffic or inject credentials"}
+		}
+	}
 	return nil
 }
 
