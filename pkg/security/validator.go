@@ -312,6 +312,15 @@ func (v *Validator) isConfigWriteOperation(command string) bool {
 
 	writeSubcommands := []string{
 		"use-context",
+		"set",
+		"set-cluster",
+		"set-context",
+		"set-credentials",
+		"unset",
+		"delete-cluster",
+		"delete-context",
+		"delete-user",
+		"rename-context",
 	}
 
 	subcommand := cmdParts[1]
