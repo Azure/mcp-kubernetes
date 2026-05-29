@@ -14,6 +14,11 @@ const (
 )
 
 var (
+	// globalFlagWhitespace matches any run of shell whitespace recognized by
+	// shlex (space, tab, carriage return, line feed) so we can collapse it to
+	// a single space before scanning for blocked global flags.
+	globalFlagWhitespace = regexp.MustCompile(`[ \t\r\n]+`)
+
 	// KubectlBlockedGlobalFlags defines kubectl global flags that can redirect API traffic or inject credentials.
 	// These are blocked at all access levels because they bypass the intent of access-level restrictions
 	// by allowing traffic redirection and credential exfiltration.
@@ -192,7 +197,12 @@ func (v *Validator) validateGlobalFlags(command, commandType string) error {
 		return nil
 	}
 
-	cmdLower := strings.ToLower(command)
+	// Normalize all shell whitespace (tab/CR/LF/space) to a single space so the
+	// substring scan matches the executor's shlex tokenization, which treats
+	// " \t\r\n" as argument separators. Without this, payloads like
+	// "--server\thttps://attacker" bypass the literal "--server " check while
+	// still reaching exec as the flag/value pair kubectl honors.
+	cmdLower := globalFlagWhitespace.ReplaceAllString(strings.ToLower(command), " ")
 	for _, flag := range blockedFlags {
 		if strings.Contains(cmdLower, strings.ToLower(flag)) {
 			return &ValidationError{Message: "Error: Global flag '" + flag + "' is not allowed; it can redirect API traffic or inject credentials"}
