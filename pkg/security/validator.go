@@ -3,6 +3,8 @@ package security
 import (
 	"regexp"
 	"strings"
+
+	"github.com/google/shlex"
 )
 
 // Command type constants
@@ -80,6 +82,82 @@ var (
 	// HubbleReadOperations defines hubble operations that don't modify state
 	HubbleReadOperations = []string{
 		"status", "version", "help", "observe", "status", "list", "config",
+	}
+
+	// kubectlNamespaceExemptOperations are kubectl operations whose verbs are
+	// inherently not bound to a single namespace and may therefore be executed
+	// without an explicit -n flag even when --allow-namespaces is configured.
+	// These cover cluster-info / version / kubeconfig-style introspection and
+	// help commands. Verbs that can be either namespaced or cluster-scoped
+	// (get, describe, top, auth, label, annotate, delete, patch, ...) are
+	// NOT here -- those use kubectlClusterScopedResources instead.
+	kubectlNamespaceExemptOperations = map[string]bool{
+		"version":       true,
+		"cluster-info":  true,
+		"api-resources": true,
+		"api-versions":  true,
+		"config":        true,
+		"completion":    true,
+		"help":          true,
+		"options":       true,
+		"plugin":        true,
+		"explain":       true,
+	}
+
+	// kubectlClusterScopedResources is the set of well-known cluster-scoped
+	// resource types. When a kubectl command targets only resources in this
+	// set, it does not act on any namespace and is exempt from
+	// --allow-namespaces enforcement even without an explicit -n flag.
+	//
+	// Keys are lowercased, singular/plural variants and common short names are
+	// all included so the lookup tolerates the forms users actually type.
+	// Anything not in this set is treated as namespaced for safety.
+	kubectlClusterScopedResources = map[string]bool{
+		// Cluster-scoped core API
+		"node": true, "nodes": true, "no": true,
+		"namespace": true, "namespaces": true, "ns": true,
+		"persistentvolume": true, "persistentvolumes": true, "pv": true,
+		"componentstatus": true, "componentstatuses": true, "cs": true,
+
+		// RBAC cluster-scoped
+		"clusterrole": true, "clusterroles": true,
+		"clusterrolebinding": true, "clusterrolebindings": true,
+
+		// Storage cluster-scoped
+		"storageclass": true, "storageclasses": true, "sc": true,
+		"volumeattachment": true, "volumeattachments": true,
+		"csinode": true, "csinodes": true,
+		"csidriver": true, "csidrivers": true,
+
+		// API & admission cluster-scoped
+		"customresourcedefinition": true, "customresourcedefinitions": true, "crd": true, "crds": true,
+		"apiservice": true, "apiservices": true,
+		"mutatingwebhookconfiguration": true, "mutatingwebhookconfigurations": true,
+		"validatingwebhookconfiguration": true, "validatingwebhookconfigurations": true,
+		"validatingadmissionpolicy": true, "validatingadmissionpolicies": true,
+		"validatingadmissionpolicybinding": true, "validatingadmissionpolicybindings": true,
+
+		// Cert / scheduling / networking cluster-scoped
+		"certificatesigningrequest": true, "certificatesigningrequests": true, "csr": true, "csrs": true,
+		"priorityclass": true, "priorityclasses": true, "pc": true,
+		"runtimeclass": true, "runtimeclasses": true,
+		"ingressclass": true, "ingressclasses": true,
+		"flowschema": true, "flowschemas": true,
+		"prioritylevelconfiguration": true, "prioritylevelconfigurations": true,
+	}
+
+	// helmNamespaceExemptOperations mirror kubectlNamespaceExemptOperations
+	// for helm. helm's namespaced commands (list/status/get/install/...) all
+	// honor -n, but the entries below operate on local config / repo state.
+	helmNamespaceExemptOperations = map[string]bool{
+		"version":    true,
+		"env":        true,
+		"repo":       true,
+		"search":     true,
+		"completion": true,
+		"help":       true,
+		"verify":     true,
+		"show":       true,
 	}
 )
 
@@ -177,7 +255,7 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 	}
 
 	// Check namespace scope restrictions
-	if err := v.validateNamespaceScope(command); err != nil {
+	if err := v.validateNamespaceScope(command, commandType); err != nil {
 		return err
 	}
 
@@ -257,31 +335,225 @@ func (v *Validator) validateAccessLevel(command, commandType string) error {
 	return nil
 }
 
+// Sentinel namespace tokens returned by namespace extraction.
+const (
+	namespaceTokenAmbiguous     = "__AMBIGUOUS_NAMESPACE__"
+	namespaceTokenAllNamespaces = "*"
+)
+
+// tokenizeCommand splits a command string the same way the executor does
+// (shlex), so the validator's view of `-n value`, quoting and the `--`
+// separator matches what kubectl will actually receive. Falls back to
+// strings.Fields when shlex rejects the input (unterminated quotes etc.)
+// so validation still runs -- the executor will reject the broken input
+// downstream.
+func tokenizeCommand(command string) []string {
+	if tokens, err := shlex.Split(command); err == nil {
+		return tokens
+	}
+	return strings.Fields(command)
+}
+
+// splitArgsAtDoubleDash returns the slice of tokens up to (but excluding)
+// a free-standing "--" separator. kubectl uses "--" to mark the start of
+// arguments that should be passed to the child process (e.g. the inner
+// `sh -c '...'` of `kubectl exec mypod -- ...`). Anything past "--" is not
+// a kubectl flag and must not influence namespace / scope decisions.
+func splitArgsAtDoubleDash(tokens []string) []string {
+	for i, t := range tokens {
+		if t == "--" {
+			return tokens[:i]
+		}
+	}
+	return tokens
+}
+
 // validateNamespaceScope validates if a command's namespace scope is allowed by security settings
-func (v *Validator) validateNamespaceScope(command string) error {
-	// Extract namespace from command
-	namespace := v.extractNamespaceFromCommand(command)
+func (v *Validator) validateNamespaceScope(command, commandType string) error {
+	tokens := splitArgsAtDoubleDash(tokenizeCommand(command))
+
+	namespace := extractNamespaceFromTokens(tokens)
 
 	// Reject commands with multiple (ambiguous) namespace flags
-	if namespace == "__AMBIGUOUS_NAMESPACE__" {
+	if namespace == namespaceTokenAmbiguous {
 		return &ValidationError{Message: "Error: Command contains multiple namespace flags which is not allowed"}
 	}
 
+	hasRestrictions := len(v.secConfig.allowedNamespaces) > 0 || len(v.secConfig.allowedNamespacesRe) > 0
+
 	// If command applies to all namespaces, and there are namespace restrictions
-	if namespace == "*" && (len(v.secConfig.allowedNamespaces) > 0 || len(v.secConfig.allowedNamespacesRe) > 0) {
+	if namespace == namespaceTokenAllNamespaces && hasRestrictions {
 		return &ValidationError{Message: "Error: Access to all namespaces is restricted by security configuration"}
 	}
 
-	// If a namespace is specified (or default "default" is used), check if it's allowed
-	if namespace != "" && namespace != "*" {
+	// If a namespace is specified, check if it's allowed
+	if namespace != "" && namespace != namespaceTokenAllNamespaces {
 		if !v.secConfig.IsNamespaceAllowed(namespace) {
 			return &ValidationError{
 				Message: "Error: Access to namespace '" + namespace + "' is denied by security configuration",
 			}
 		}
+		return nil
+	}
+
+	// No explicit namespace was found. When allowlist restrictions are active,
+	// commands without an explicit namespace would otherwise execute in the
+	// kubeconfig current namespace, which silently bypasses the allowlist.
+	// Reject these unless the command is inherently namespace-independent.
+	if namespace == "" && hasRestrictions {
+		if v.isCommandNamespaceExempt(tokens, commandType) {
+			return nil
+		}
+		return &ValidationError{
+			Message: "Error: Command does not specify a namespace; an explicit -n/--namespace flag is required when --allow-namespaces is configured",
+		}
 	}
 
 	return nil
+}
+
+// isCommandNamespaceExempt reports whether a command may run without an
+// explicit -n / --namespace flag even when --allow-namespaces is configured.
+// A command is exempt when either:
+//
+//   - its operation verb is in the *NamespaceExemptOperations table (verbs
+//     that never touch a namespace, e.g. kubectl version, helm repo, ...), or
+//   - (kubectl only) every resource reference in the command targets a
+//     cluster-scoped resource (kubectl get nodes, kubectl get pv, kubectl get
+//     clusterrole/foo, ...).
+//
+// Anything ambiguous (unknown resource type, no resource type at all) is
+// NOT exempt, so the default behavior is to require -n.
+func (v *Validator) isCommandNamespaceExempt(tokens []string, commandType string) bool {
+	operation := extractOperationFromTokens(tokens, commandType)
+
+	switch commandType {
+	case CommandTypeKubectl:
+		if kubectlNamespaceExemptOperations[operation] {
+			return true
+		}
+		return kubectlOnlyTargetsClusterScopedResources(tokens, operation)
+	case CommandTypeHelm:
+		return helmNamespaceExemptOperations[operation]
+	default:
+		// cilium / hubble are not gated by --allow-namespaces in this validator.
+		return true
+	}
+}
+
+// kubectlOnlyTargetsClusterScopedResources returns true iff the command
+// references one or more resource types AND every referenced resource type
+// is known cluster-scoped. Examples:
+//
+//	kubectl get nodes                       -> true  (nodes is cluster-scoped)
+//	kubectl get nodes,pv                    -> true  (both cluster-scoped)
+//	kubectl get clusterrole/admin           -> true  (resource/name form)
+//	kubectl get pods                        -> false (pods is namespaced)
+//	kubectl get nodes pods                  -> false (mixed)
+//	kubectl get -f manifest.yaml            -> false (no resource type to inspect)
+//	kubectl auth can-i get pods             -> false (verb arg, not a resource)
+//	kubectl logs mypod                      -> false (mypod is a name, no type)
+func kubectlOnlyTargetsClusterScopedResources(tokens []string, operation string) bool {
+	// Only well-understood read/inspect verbs are eligible. Mutation verbs
+	// like "label" or "delete" take resources too, but until we model the
+	// argument grammar carefully we conservatively require -n for them.
+	resourceVerbs := map[string]bool{
+		"get": true, "describe": true, "top": true, "edit": true, "wait": true,
+	}
+	if !resourceVerbs[operation] {
+		return false
+	}
+
+	resourceArgs := collectResourceArgs(tokens, operation)
+	if len(resourceArgs) == 0 {
+		return false
+	}
+
+	// kubectl get accepts two grammars:
+	//   1. <type> <name1> <name2> ...        — type appears once, the rest are names
+	//   2. <type>/<name> <type>/<name> ...   — every positional is its own type/name pair
+	// If the first positional uses the resource/name form, we must inspect
+	// EVERY positional (each carries its own type). Otherwise the first
+	// positional carries the only type and the rest are names we can ignore.
+	firstIsSlash := strings.Contains(resourceArgs[0], "/")
+
+	argsToCheck := resourceArgs[:1]
+	if firstIsSlash {
+		argsToCheck = resourceArgs
+	}
+
+	for _, arg := range argsToCheck {
+		// In slash-form pass, ignore positionals that are not themselves
+		// slash form (they would be stray names left over from a malformed
+		// command — be conservative and reject).
+		if firstIsSlash && !strings.Contains(arg, "/") {
+			return false
+		}
+		for _, rt := range splitResourceTypes(arg) {
+			if !kubectlClusterScopedResources[strings.ToLower(rt)] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// collectResourceArgs returns the positional arguments that follow the
+// operation verb, stopping at flags and at the first arg that is purely a
+// name (no type). For "kubectl get nodes node1 -o yaml" it returns
+// ["nodes", "node1"]; for "kubectl get nodes,pv" it returns ["nodes,pv"].
+// Flag values (`-o yaml`, `-l app=x`, `--field-selector=...`) are skipped.
+func collectResourceArgs(tokens []string, operation string) []string {
+	flagsTakingValues := map[string]bool{
+		"-o": true, "--output": true,
+		"-l": true, "--selector": true,
+		"--field-selector":      true,
+		"--chunk-size":          true,
+		"--show-managed-fields": true,
+		"--sort-by":             true,
+		"--template":            true,
+		"--server-print":        true,
+		"--for":                 true,
+	}
+
+	var out []string
+	seenOp := false
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		if !seenOp {
+			if t == operation {
+				seenOp = true
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "-") {
+			// Flag. Skip its value if it takes a separate argument and isn't using "=".
+			if !strings.Contains(t, "=") && flagsTakingValues[t] && i+1 < len(tokens) {
+				i++
+			}
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// splitResourceTypes turns a resource argument into the list of resource
+// types it references. "nodes,pv" -> ["nodes", "pv"]; "clusterrole/admin"
+// -> ["clusterrole"]; "node1" -> ["node1"] (just a name -- caller must
+// decide what to do with bare names).
+func splitResourceTypes(arg string) []string {
+	parts := strings.Split(arg, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if i := strings.Index(p, "/"); i >= 0 {
+			p = p[:i]
+		}
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // isOperationInList checks if an operation is in the given list
@@ -296,20 +568,22 @@ func (v *Validator) isOperationInList(operation string, allowedOperations []stri
 
 // extractOperationFromCommand extracts the operation from a command
 func (v *Validator) extractOperationFromCommand(command, commandType string) string {
-	cmdParts := strings.Fields(command)
-	var operation string
+	return extractOperationFromTokens(splitArgsAtDoubleDash(tokenizeCommand(command)), commandType)
+}
 
-	for _, part := range cmdParts {
-		if !strings.HasPrefix(part, "-") {
-			// Skip the initial command name (kubectl, helm, cilium)
-			if part != commandType {
-				operation = part
-				break
-			}
+// extractOperationFromTokens returns the first positional token after the
+// command name (skipping flags). For "kubectl get pods -n x" -> "get".
+func extractOperationFromTokens(tokens []string, commandType string) string {
+	for _, part := range tokens {
+		if strings.HasPrefix(part, "-") {
+			continue
 		}
+		if part == commandType {
+			continue
+		}
+		return part
 	}
-
-	return operation
+	return ""
 }
 
 // isConfigWriteOperation checks if a config command is a write operation
@@ -343,35 +617,89 @@ func (v *Validator) isConfigWriteOperation(command string) bool {
 	return false
 }
 
-// extractNamespaceFromCommand extracts the namespace from a command.
-// Returns "__AMBIGUOUS_NAMESPACE__" if multiple namespace flags are detected.
-func (v *Validator) extractNamespaceFromCommand(command string) string {
-	// Check for explicit namespace parameter
-	namespacePattern := `(?:-n|--namespace)[\s=]([^\s]+)`
-	re := regexp.MustCompile(namespacePattern)
-	allMatches := re.FindAllStringSubmatch(command, -1)
+// extractNamespaceFromTokens scans a pre-tokenized command for the
+// namespace flag. Only flag tokens are inspected, so a `-n` that appears
+// inside `kubectl exec ... -- grep -n foo file` (already trimmed by the
+// caller via splitArgsAtDoubleDash) and a literal `-n` value within an
+// `--option=value` style flag (token contains "=") are correctly ignored.
+//
+// Supported forms (all in a *single* flag token or a flag/value pair):
+//
+//	--namespace=value
+//	--namespace value
+//	-n=value
+//	-n value
+//	-nvalue          (compact pflag short form)
+//
+// All-namespaces forms: --all-namespaces / --all-namespaces=true|false / -A.
+func extractNamespaceFromTokens(tokens []string) string {
+	var (
+		nsValues []string
+		allNs    bool
+	)
 
-	if len(allMatches) > 1 {
-		// Multiple namespace flags are ambiguous and potentially malicious
-		return "__AMBIGUOUS_NAMESPACE__"
-	}
-	if len(allMatches) == 1 {
-		return allMatches[0][1]
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+
+		switch {
+		case t == "--all-namespaces" || t == "-A":
+			allNs = true
+			continue
+		case strings.HasPrefix(t, "--all-namespaces="):
+			v := strings.TrimPrefix(t, "--all-namespaces=")
+			if v != "false" && v != "0" {
+				allNs = true
+			}
+			continue
+		}
+
+		// --namespace forms
+		if t == "--namespace" {
+			if i+1 < len(tokens) {
+				nsValues = append(nsValues, tokens[i+1])
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "--namespace=") {
+			nsValues = append(nsValues, strings.TrimPrefix(t, "--namespace="))
+			continue
+		}
+
+		// -n short forms
+		if t == "-n" {
+			if i+1 < len(tokens) {
+				nsValues = append(nsValues, tokens[i+1])
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "-n=") {
+			nsValues = append(nsValues, strings.TrimPrefix(t, "-n="))
+			continue
+		}
+		// Compact form `-nVALUE`. Restrict to tokens that start with literal
+		// "-n" but are NOT another long flag like "--node-selector" and not
+		// "-nA"/"-no" etc combined with other short flags. We require the
+		// next character to be present and the token length > 2.
+		if len(t) > 2 && strings.HasPrefix(t, "-n") && !strings.HasPrefix(t, "--") {
+			nsValues = append(nsValues, t[2:])
+			continue
+		}
 	}
 
-	// Check if there's a format like <resource>/<name>
-	resourcePattern := `(\S+)/(\S+)`
-	re = regexp.MustCompile(resourcePattern)
-	if re.MatchString(command) {
-		// If the command contains resource/name format but no explicit namespace,
-		// the default namespace "default" will be used
-		return "default"
+	if len(nsValues) > 1 {
+		return namespaceTokenAmbiguous
 	}
-
-	// Check for --all-namespaces or -A
-	if strings.Contains(command, "--all-namespaces") || strings.Contains(command, " -A") || strings.HasSuffix(command, " -A") {
-		return "*" // Special marker indicating all namespaces
+	if len(nsValues) == 1 {
+		if allNs {
+			// Conflict: both -n X and --all-namespaces specified.
+			return namespaceTokenAmbiguous
+		}
+		return nsValues[0]
 	}
-
-	return "" // No namespace found, default namespace will be used
+	if allNs {
+		return namespaceTokenAllNamespaces
+	}
+	return ""
 }
