@@ -343,3 +343,99 @@ func TestNamespaceBypassPrevention(t *testing.T) {
 		})
 	}
 }
+
+// TestNamespaceNoFlagBypass covers the MSRC report where commands without an
+// explicit -n / --namespace flag silently bypassed --allow-namespaces and
+// executed in the kubeconfig current namespace. The expected behavior is:
+//   - When an allowlist is configured, namespaced operations without -n are
+//     rejected.
+//   - Cluster-scoped / non-resource operations (version, cluster-info, config,
+//     api-resources, help, etc.) remain allowed.
+//   - Compact short-flag form `-nVALUE` is parsed and validated.
+func TestNamespaceNoFlagBypass(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("production")
+	secConfig.AccessLevel = AccessLevelReadWrite
+	validator := NewValidator(secConfig)
+
+	tests := []struct {
+		name        string
+		command     string
+		commandType string
+		shouldBlock bool
+	}{
+		// Explicit allowed namespace: pass through
+		{"explicit allowed ns", "kubectl get pods -n production", CommandTypeKubectl, false},
+		{"explicit allowed --namespace=", "kubectl get pods --namespace=production", CommandTypeKubectl, false},
+
+		// Explicit disallowed namespace: blocked
+		{"explicit disallowed ns", "kubectl get pods -n default", CommandTypeKubectl, true},
+		{"--namespace=disallowed", "kubectl get pods --namespace=default", CommandTypeKubectl, true},
+		{"--all-namespaces", "kubectl get pods --all-namespaces", CommandTypeKubectl, true},
+		{"-A short form", "kubectl get pods -A", CommandTypeKubectl, true},
+
+		// No-flag bypass: now blocked
+		{"no flag get secrets", "kubectl get secrets", CommandTypeKubectl, true},
+		{"no flag get pods", "kubectl get pods", CommandTypeKubectl, true},
+		{"no flag create secret", "kubectl create secret generic pwned --from-literal=x=y", CommandTypeKubectl, true},
+		{"no flag apply -f", "kubectl apply -f deployment.yaml", CommandTypeKubectl, true},
+		{"no flag get configmaps", "kubectl get configmaps", CommandTypeKubectl, true},
+		{"no flag describe secret", "kubectl describe secret mysecret", CommandTypeKubectl, true},
+		{"no flag logs", "kubectl logs mypod", CommandTypeKubectl, true},
+		{"no flag delete secret", "kubectl delete secret mysecret", CommandTypeKubectl, true},
+		{"no flag scale", "kubectl scale deployment myapp --replicas=3", CommandTypeKubectl, true},
+		{"no flag helm list", "helm list", CommandTypeHelm, true},
+		{"no flag helm status", "helm status myapp", CommandTypeHelm, true},
+
+		// Compact -nVALUE form: parsed and enforced
+		{"compact -nVALUE disallowed", "kubectl get secrets -ndefault", CommandTypeKubectl, true},
+		{"compact -nVALUE allowed", "kubectl get secrets -nproduction", CommandTypeKubectl, false},
+
+		// Cluster-scoped / non-resource operations: allowed without -n
+		{"version no ns", "kubectl version", CommandTypeKubectl, false},
+		{"cluster-info no ns", "kubectl cluster-info", CommandTypeKubectl, false},
+		{"api-resources no ns", "kubectl api-resources", CommandTypeKubectl, false},
+		{"api-versions no ns", "kubectl api-versions", CommandTypeKubectl, false},
+		{"config get-contexts no ns", "kubectl config get-contexts", CommandTypeKubectl, false},
+		{"explain pods no ns", "kubectl explain pods", CommandTypeKubectl, false},
+		{"helm version no ns", "helm version", CommandTypeHelm, false},
+		{"helm repo list no ns", "helm repo list", CommandTypeHelm, false},
+		{"helm search no ns", "helm search repo nginx", CommandTypeHelm, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tc.command, tc.commandType)
+			if tc.shouldBlock && err == nil {
+				t.Errorf("expected block, got allow: %q", tc.command)
+			}
+			if !tc.shouldBlock && err != nil {
+				t.Errorf("expected allow, got block: %q: %v", tc.command, err)
+			}
+		})
+	}
+}
+
+// TestNamespaceNoRestrictionsAllowsEmptyNamespace makes sure that when no
+// --allow-namespaces is configured we keep the historical permissive behavior:
+// commands without -n are accepted (kubectl uses the kubeconfig current ns).
+func TestNamespaceNoRestrictionsAllowsEmptyNamespace(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.AccessLevel = AccessLevelReadWrite
+	validator := NewValidator(secConfig)
+
+	commands := []struct {
+		cmd  string
+		kind string
+	}{
+		{"kubectl get pods", CommandTypeKubectl},
+		{"kubectl get secrets", CommandTypeKubectl},
+		{"kubectl apply -f deployment.yaml", CommandTypeKubectl},
+		{"helm list", CommandTypeHelm},
+	}
+	for _, c := range commands {
+		if err := validator.ValidateCommand(c.cmd, c.kind); err != nil {
+			t.Errorf("unrestricted config should allow %q, got: %v", c.cmd, err)
+		}
+	}
+}

@@ -81,6 +81,35 @@ var (
 	HubbleReadOperations = []string{
 		"status", "version", "help", "observe", "status", "list", "config",
 	}
+
+	// kubectlNamespaceExemptOperations are kubectl operations that are not bound to
+	// a single namespace and may therefore be executed without an explicit -n flag
+	// even when --allow-namespaces is configured. These cover cluster-info /
+	// version / kubeconfig-style introspection and help commands.
+	kubectlNamespaceExemptOperations = map[string]bool{
+		"version":       true,
+		"cluster-info":  true,
+		"api-resources": true,
+		"api-versions":  true,
+		"config":        true,
+		"completion":    true,
+		"help":          true,
+		"options":       true,
+		"plugin":        true,
+		"explain":       true,
+	}
+
+	// helmNamespaceExemptOperations mirror kubectlNamespaceExemptOperations for helm.
+	helmNamespaceExemptOperations = map[string]bool{
+		"version":    true,
+		"env":        true,
+		"repo":       true,
+		"search":     true,
+		"completion": true,
+		"help":       true,
+		"verify":     true,
+		"show":       true,
+	}
 )
 
 // Validator handles validation of commands against security configuration
@@ -177,7 +206,7 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 	}
 
 	// Check namespace scope restrictions
-	if err := v.validateNamespaceScope(command); err != nil {
+	if err := v.validateNamespaceScope(command, commandType); err != nil {
 		return err
 	}
 
@@ -258,7 +287,7 @@ func (v *Validator) validateAccessLevel(command, commandType string) error {
 }
 
 // validateNamespaceScope validates if a command's namespace scope is allowed by security settings
-func (v *Validator) validateNamespaceScope(command string) error {
+func (v *Validator) validateNamespaceScope(command, commandType string) error {
 	// Extract namespace from command
 	namespace := v.extractNamespaceFromCommand(command)
 
@@ -267,8 +296,10 @@ func (v *Validator) validateNamespaceScope(command string) error {
 		return &ValidationError{Message: "Error: Command contains multiple namespace flags which is not allowed"}
 	}
 
+	hasRestrictions := len(v.secConfig.allowedNamespaces) > 0 || len(v.secConfig.allowedNamespacesRe) > 0
+
 	// If command applies to all namespaces, and there are namespace restrictions
-	if namespace == "*" && (len(v.secConfig.allowedNamespaces) > 0 || len(v.secConfig.allowedNamespacesRe) > 0) {
+	if namespace == "*" && hasRestrictions {
 		return &ValidationError{Message: "Error: Access to all namespaces is restricted by security configuration"}
 	}
 
@@ -279,9 +310,39 @@ func (v *Validator) validateNamespaceScope(command string) error {
 				Message: "Error: Access to namespace '" + namespace + "' is denied by security configuration",
 			}
 		}
+		return nil
+	}
+
+	// No explicit namespace was found. When allowlist restrictions are active,
+	// commands without an explicit namespace would otherwise execute in the
+	// kubeconfig current namespace, which silently bypasses the allowlist.
+	// Reject these unless the operation is cluster-scoped or non-resource (e.g.
+	// kubectl version, kubectl cluster-info, kubectl config ...).
+	if namespace == "" && hasRestrictions {
+		operation := v.extractOperationFromCommand(command, commandType)
+		if v.isNamespaceExemptOperation(operation, commandType) {
+			return nil
+		}
+		return &ValidationError{
+			Message: "Error: Command does not specify a namespace; an explicit -n/--namespace flag is required when --allow-namespaces is configured",
+		}
 	}
 
 	return nil
+}
+
+// isNamespaceExemptOperation reports whether the given operation may be executed
+// without an explicit namespace even when --allow-namespaces is configured.
+func (v *Validator) isNamespaceExemptOperation(operation, commandType string) bool {
+	switch commandType {
+	case CommandTypeKubectl:
+		return kubectlNamespaceExemptOperations[operation]
+	case CommandTypeHelm:
+		return helmNamespaceExemptOperations[operation]
+	default:
+		// cilium / hubble are not gated by --allow-namespaces in this validator.
+		return true
+	}
 }
 
 // isOperationInList checks if an operation is in the given list
@@ -346,8 +407,13 @@ func (v *Validator) isConfigWriteOperation(command string) bool {
 // extractNamespaceFromCommand extracts the namespace from a command.
 // Returns "__AMBIGUOUS_NAMESPACE__" if multiple namespace flags are detected.
 func (v *Validator) extractNamespaceFromCommand(command string) string {
-	// Check for explicit namespace parameter
-	namespacePattern := `(?:-n|--namespace)[\s=]([^\s]+)`
+	// Check for explicit namespace parameter. Matches:
+	//   --namespace=value, --namespace value
+	//   -n=value, -n value, -nvalue (compact pflag short form)
+	// Anchoring on (^|\s) prevents `--namespace` from matching the substring
+	// inside other long flags (e.g. `--no-headers` would never reach here, but
+	// future flags starting with `--namespace...` should not collide either).
+	namespacePattern := `(?:^|\s)(?:--namespace[\s=]|-n[\s=]?)([^\s]+)`
 	re := regexp.MustCompile(namespacePattern)
 	allMatches := re.FindAllStringSubmatch(command, -1)
 
