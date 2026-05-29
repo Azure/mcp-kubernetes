@@ -139,7 +139,12 @@ func TestNamespaceHandling(t *testing.T) {
 	}{
 		{"kubectl get pods -n test-ns", false, ""},
 		{"kubectl get pods --namespace=another-ns", false, ""},
-		{"kubectl get pod/mypod", false, ""},
+		// resource/name without an explicit -n no longer silently defaults
+		// to "default" (that was a bypass when "default" was in the
+		// allowlist). It must be rejected, the same as bare "kubectl get
+		// pods", because pod is a namespaced resource and the actual
+		// namespace would come from kubeconfig.
+		{"kubectl get pod/mypod", true, "explicit -n"},
 		{"kubectl get pods -n disallowed-ns", true, "denied by security configuration"},
 		{"kubectl get pods --all-namespaces", true, "restricted by security configuration"},
 		{"kubectl get pods -A", true, "restricted by security configuration"},
@@ -436,6 +441,176 @@ func TestNamespaceNoRestrictionsAllowsEmptyNamespace(t *testing.T) {
 	for _, c := range commands {
 		if err := validator.ValidateCommand(c.cmd, c.kind); err != nil {
 			t.Errorf("unrestricted config should allow %q, got: %v", c.cmd, err)
+		}
+	}
+}
+
+// TestNamespaceResourceSlashBypass — review comment #1 on PR #141.
+// extractNamespaceFromCommand previously returned "default" for any command
+// containing a resource/name token, so with an allowlist that contained
+// "default" (a common configuration), commands like `kubectl get
+// secret/mysecret` silently bypassed the allowlist and ran in the
+// kubeconfig current namespace. Additionally, `kubectl get deploy/myapp -A`
+// hit the resource/name branch BEFORE the --all-namespaces check ran, so it
+// was evaluated as a single namespace rather than as all-namespaces.
+func TestNamespaceResourceSlashBypass(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("default,production")
+	secConfig.AccessLevel = AccessLevelReadWrite
+	validator := NewValidator(secConfig)
+
+	tests := []struct {
+		name        string
+		command     string
+		shouldBlock bool
+	}{
+		// resource/name without -n must NOT silently default to "default"
+		// just because "default" is in the allowlist.
+		{"resource/name no ns", "kubectl get secret/mysecret", true},
+		{"resource/name delete", "kubectl delete secret/mysecret", true},
+		// --all-namespaces must take precedence over resource/name parsing.
+		{"resource/name -A", "kubectl get deploy/myapp -A", true},
+		{"resource/name --all-namespaces", "kubectl get deploy/myapp --all-namespaces", true},
+		// Explicit ns is still respected.
+		{"resource/name -n allowed", "kubectl get secret/mysecret -n production", false},
+		{"resource/name -n denied", "kubectl get secret/mysecret -n kube-system", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tc.command, CommandTypeKubectl)
+			if tc.shouldBlock && err == nil {
+				t.Errorf("expected block, got allow: %q", tc.command)
+			}
+			if !tc.shouldBlock && err != nil {
+				t.Errorf("expected allow, got block: %q: %v", tc.command, err)
+			}
+		})
+	}
+}
+
+// TestNamespaceFlagInsideExecArgs — review comment #2 on PR #141.
+// The old regex matched -n / --namespace anywhere in the string, including
+// inside the inner arguments of `kubectl exec ... -- ...`. That meant:
+//
+//   - benign inner `-n` (e.g. `grep -n`) made the validator parse a wrong
+//     namespace from arbitrary text, blocking legitimate commands;
+//   - crafted payloads like `... -- sh -c '... -n production ...'` made the
+//     validator believe the namespace was allowed, while the real exec ran
+//     in the kubeconfig current namespace.
+//
+// The fix tokenizes with shlex and ignores everything after a free-standing
+// "--" separator.
+func TestNamespaceFlagInsideExecArgs(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("production")
+	secConfig.AccessLevel = AccessLevelReadWrite
+	validator := NewValidator(secConfig)
+
+	// Inner `-n` in grep args must NOT be parsed as the kube namespace.
+	// Because the command itself doesn't specify a namespace and exec is
+	// namespaced, this is rejected by the "needs explicit -n" rule -- the
+	// important thing is that it is NOT rejected with a "namespace foo is
+	// denied" message that would betray the buggy parse.
+	err := validator.ValidateCommand("kubectl exec mypod -- grep -n foo file", CommandTypeKubectl)
+	if err == nil {
+		t.Errorf("exec without -n should be rejected when allowlist is configured")
+	} else if strings.Contains(err.Error(), "namespace 'foo'") {
+		t.Errorf("inner '-n foo' must not be parsed as kube namespace: %v", err)
+	}
+
+	// Crafted payload: attacker-controlled inner string contains
+	// "-n production". The real exec still runs in the kubeconfig current
+	// namespace, so the validator must NOT be fooled into approving it.
+	err = validator.ValidateCommand(
+		"kubectl exec mypod -- sh -c 'do_evil -n production'",
+		CommandTypeKubectl,
+	)
+	if err == nil {
+		t.Errorf("crafted inner -n production must not bypass --allow-namespaces")
+	}
+
+	// Adding an outer explicit -n makes it legitimate. Inner -n is still ignored.
+	err = validator.ValidateCommand(
+		"kubectl exec mypod -n production -- grep -n foo file",
+		CommandTypeKubectl,
+	)
+	if err != nil {
+		t.Errorf("legitimate exec with outer -n production should be allowed, got: %v", err)
+	}
+}
+
+// TestClusterScopedResourcesAllowedWithoutNamespace — review comment #3 on
+// PR #141. The verb-keyed exempt set (`version`, `cluster-info`, ...) does
+// not cover routine cluster-scoped read commands like `kubectl get nodes`,
+// because they use the same `get`/`top`/`auth` verbs as namespaced reads.
+// The fix adds a cluster-scoped resource set so these commands stay
+// allowed without -n.
+func TestClusterScopedResourcesAllowedWithoutNamespace(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("production")
+	secConfig.AccessLevel = AccessLevelReadWrite
+	validator := NewValidator(secConfig)
+
+	allowed := []string{
+		"kubectl get nodes",
+		"kubectl get no",
+		"kubectl get pv",
+		"kubectl get persistentvolumes",
+		"kubectl get namespaces",
+		"kubectl get ns",
+		"kubectl get clusterroles",
+		"kubectl get clusterrolebindings",
+		"kubectl get storageclass",
+		"kubectl get crd",
+		"kubectl get csr",
+		"kubectl get priorityclasses",
+		"kubectl top nodes",
+		"kubectl describe node node1",
+		"kubectl get nodes,pv",         // multi-type, all cluster-scoped
+		"kubectl get clusterrole/admin", // resource/name on cluster-scoped type
+	}
+	for _, c := range allowed {
+		if err := validator.ValidateCommand(c, CommandTypeKubectl); err != nil {
+			t.Errorf("cluster-scoped read should be allowed without -n: %q: %v", c, err)
+		}
+	}
+
+	// Mixed cluster-scoped + namespaced resources are NOT exempt.
+	blocked := []string{
+		"kubectl get nodes,pods",          // mixed
+		"kubectl get pods",                // namespaced
+		"kubectl describe pod mypod",      // namespaced
+		"kubectl get pod/mypod",           // namespaced via resource/name
+		"kubectl auth can-i get pods",     // verb arg, not a resource
+		"kubectl logs mypod",              // logs always targets a pod (namespaced)
+		"kubectl label node node1 env=x",  // mutation verbs are not in the exempt verb set
+		"kubectl delete node node1",       // mutation verbs are not in the exempt verb set
+	}
+	for _, c := range blocked {
+		if err := validator.ValidateCommand(c, CommandTypeKubectl); err == nil {
+			t.Errorf("expected block (namespaced or mixed), got allow: %q", c)
+		}
+	}
+}
+
+// TestAllNamespacesPlusExplicitNamespaceIsAmbiguous — when a command
+// contains both --all-namespaces and -n X, the intent is ambiguous and
+// should be rejected rather than silently honoring one form.
+func TestAllNamespacesPlusExplicitNamespaceIsAmbiguous(t *testing.T) {
+	secConfig := NewSecurityConfig()
+	secConfig.SetAllowedNamespaces("production")
+	validator := NewValidator(secConfig)
+
+	cases := []string{
+		"kubectl get pods -A -n production",
+		"kubectl get pods --all-namespaces -n production",
+		"kubectl get pods --all-namespaces --namespace=production",
+	}
+	for _, c := range cases {
+		err := validator.ValidateCommand(c, CommandTypeKubectl)
+		if err == nil {
+			t.Errorf("ambiguous all-namespaces+explicit must be rejected: %q", c)
 		}
 	}
 }
