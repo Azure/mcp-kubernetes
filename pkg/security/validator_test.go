@@ -578,10 +578,12 @@ func TestClusterScopedResourcesAllowedWithoutNamespace(t *testing.T) {
 
 	// Mixed cluster-scoped + namespaced resources are NOT exempt.
 	blocked := []string{
-		"kubectl get nodes,pods",          // mixed
+		"kubectl get nodes,pods",          // mixed via comma
+		"kubectl get node/n1 pod/p1",      // mixed via multiple resource/name positionals
 		"kubectl get pods",                // namespaced
 		"kubectl describe pod mypod",      // namespaced
 		"kubectl get pod/mypod",           // namespaced via resource/name
+		"kubectl get widget/foo",          // unknown type -> assume namespaced
 		"kubectl auth can-i get pods",     // verb arg, not a resource
 		"kubectl logs mypod",              // logs always targets a pod (namespaced)
 		"kubectl label node node1 env=x",  // mutation verbs are not in the exempt verb set

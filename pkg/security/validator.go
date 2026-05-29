@@ -469,12 +469,30 @@ func kubectlOnlyTargetsClusterScopedResources(tokens []string, operation string)
 		return false
 	}
 
-	// kubectl's grammar: the first positional after the verb is the resource
-	// type (or a comma-separated list of types, or a TYPE/NAME pair).
-	// Subsequent positionals are names. We only inspect the first.
-	for _, rt := range splitResourceTypes(resourceArgs[0]) {
-		if !kubectlClusterScopedResources[strings.ToLower(rt)] {
+	// kubectl get accepts two grammars:
+	//   1. <type> <name1> <name2> ...        — type appears once, the rest are names
+	//   2. <type>/<name> <type>/<name> ...   — every positional is its own type/name pair
+	// If the first positional uses the resource/name form, we must inspect
+	// EVERY positional (each carries its own type). Otherwise the first
+	// positional carries the only type and the rest are names we can ignore.
+	firstIsSlash := strings.Contains(resourceArgs[0], "/")
+
+	argsToCheck := resourceArgs[:1]
+	if firstIsSlash {
+		argsToCheck = resourceArgs
+	}
+
+	for _, arg := range argsToCheck {
+		// In slash-form pass, ignore positionals that are not themselves
+		// slash form (they would be stray names left over from a malformed
+		// command — be conservative and reject).
+		if firstIsSlash && !strings.Contains(arg, "/") {
 			return false
+		}
+		for _, rt := range splitResourceTypes(arg) {
+			if !kubectlClusterScopedResources[strings.ToLower(rt)] {
+				return false
+			}
 		}
 	}
 	return true
