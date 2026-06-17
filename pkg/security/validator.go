@@ -303,6 +303,14 @@ func (v *Validator) validateAccessLevel(command, commandType string) error {
 		if operation == "config" && v.isConfigWriteOperation(command) {
 			return &ValidationError{Message: "Error: Cannot execute config write operations in read-only mode"}
 		}
+		// Special handling for auth operations - "auth" is a read-only verb
+		// for subcommands like "auth can-i" / "auth whoami", but "auth reconcile"
+		// creates/updates RBAC roles and bindings and is therefore a write
+		// operation. Reject it in read-only mode regardless of the broader
+		// "auth" classification.
+		if operation == "auth" && v.isAuthWriteOperation(command, commandType) {
+			return &ValidationError{Message: "Error: Cannot execute auth write operations (e.g. 'auth reconcile') in read-only mode"}
+		}
 		if !v.isOperationInList(operation, readOperations) {
 			return &ValidationError{Message: "Error: Cannot execute write or admin operations in read-only mode"}
 		}
@@ -584,6 +592,43 @@ func extractOperationFromTokens(tokens []string, commandType string) string {
 		return part
 	}
 	return ""
+}
+
+// isAuthWriteOperation reports whether an `<command-type> auth ...` command
+// is a write operation. Currently this captures `kubectl auth reconcile`,
+// which creates/updates RBAC Role / RoleBinding / ClusterRole /
+// ClusterRoleBinding objects from a manifest. Other auth subcommands
+// (`can-i`, `whoami`) are read-only and remain allowed in readonly mode.
+//
+// Only kubectl has an `auth` subcommand grammar today; helm/cilium/hubble
+// also list "auth" as a read operation in some contexts but do not have a
+// reconcile equivalent, so for those we treat all auth subcommands as read.
+func (v *Validator) isAuthWriteOperation(command, commandType string) bool {
+	if commandType != CommandTypeKubectl {
+		return false
+	}
+	tokens := splitArgsAtDoubleDash(tokenizeCommand(command))
+	// Find the "auth" verb position (after skipping the optional "kubectl"
+	// prefix and any global flags), then look at the next positional token.
+	seenAuth := false
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		if strings.HasPrefix(t, "-") {
+			continue
+		}
+		if !seenAuth {
+			if t == "auth" {
+				seenAuth = true
+			}
+			continue
+		}
+		// First positional after "auth" is the subcommand.
+		if t == "reconcile" {
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // isConfigWriteOperation checks if a config command is a write operation

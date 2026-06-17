@@ -78,6 +78,19 @@ func TestValidatorAccessLevels(t *testing.T) {
 		{"Admin - config set-context", AccessLevelAdmin, "config set-context myctx", false, ""},
 		{"Admin - config set-cluster", AccessLevelAdmin, "config set-cluster mycluster", false, ""},
 		{"Admin - config set-credentials", AccessLevelAdmin, "config set-credentials myuser", false, ""},
+
+		// Auth subcommand tests (MSRC 31000000636528). "auth" is in the
+		// read-only operation list because "auth can-i" / "auth whoami" are
+		// read-only, but "auth reconcile" creates/updates RBAC objects and
+		// must be treated as a write operation.
+		{"ReadOnly - auth can-i", AccessLevelReadOnly, "auth can-i create pods", false, ""},
+		{"ReadOnly - auth whoami", AccessLevelReadOnly, "auth whoami", false, ""},
+		{"ReadOnly - auth reconcile blocked", AccessLevelReadOnly, "auth reconcile -f rbac.yaml", true, "auth write operations"},
+		{"ReadOnly - auth reconcile with kubectl prefix blocked", AccessLevelReadOnly, "kubectl auth reconcile -f rbac.yaml", true, "auth write operations"},
+		{"ReadOnly - auth reconcile with leading flags blocked", AccessLevelReadOnly, "kubectl -v=2 auth reconcile -f rbac.yaml", true, "auth write operations"},
+		{"ReadWrite - auth can-i", AccessLevelReadWrite, "auth can-i create pods", false, ""},
+		{"ReadWrite - auth reconcile allowed", AccessLevelReadWrite, "auth reconcile -f rbac.yaml", false, ""},
+		{"Admin - auth reconcile allowed", AccessLevelAdmin, "auth reconcile -f rbac.yaml", false, ""},
 	}
 
 	for _, tc := range tests {
