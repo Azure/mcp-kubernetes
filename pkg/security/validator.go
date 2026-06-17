@@ -1,7 +1,6 @@
 package security
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/google/shlex"
@@ -16,35 +15,36 @@ const (
 )
 
 var (
-	// globalFlagWhitespace matches any run of shell whitespace recognized by
-	// shlex (space, tab, carriage return, line feed) so we can collapse it to
-	// a single space before scanning for blocked global flags.
-	globalFlagWhitespace = regexp.MustCompile(`[ \t\r\n]+`)
-
 	// KubectlBlockedGlobalFlags defines kubectl global flags that can redirect API traffic or inject credentials.
 	// These are blocked at all access levels because they bypass the intent of access-level restrictions
 	// by allowing traffic redirection and credential exfiltration.
+	//
+	// Entries are canonical flag names (without "=" or trailing space). Validation
+	// tokenizes the command with shlex (matching the executor) and checks each
+	// argv token against this set, so quoting / whitespace variants
+	// (`--server"="X`, `--server\tX`, `--ser"ver"=X`, `--server\=X`) all reduce to
+	// the same canonical token and are rejected.
 	KubectlBlockedGlobalFlags = []string{
-		"--server=", "--server ",
-		"--token=", "--token ",
-		"--kubeconfig=", "--kubeconfig ",
-		"--context=", "--context ",
-		"--certificate-authority=", "--certificate-authority ",
-		"--client-certificate=", "--client-certificate ",
-		"--client-key=", "--client-key ",
+		"--server",
+		"--token",
+		"--kubeconfig",
+		"--context",
+		"--certificate-authority",
+		"--client-certificate",
+		"--client-key",
 		"--insecure-skip-tls-verify",
-		"--as=", "--as ",
-		"--as-group=", "--as-group ",
-		"--as-uid=", "--as-uid ",
+		"--as",
+		"--as-group",
+		"--as-uid",
 	}
 
 	// HelmBlockedGlobalFlags defines helm global flags that can redirect API traffic or inject credentials.
 	HelmBlockedGlobalFlags = []string{
-		"--kube-apiserver=", "--kube-apiserver ",
-		"--kube-token=", "--kube-token ",
-		"--kube-ca-file=", "--kube-ca-file ",
-		"--kube-context=", "--kube-context ",
-		"--kubeconfig=", "--kubeconfig ",
+		"--kube-apiserver",
+		"--kube-token",
+		"--kube-ca-file",
+		"--kube-context",
+		"--kubeconfig",
 		"--kube-insecure-skip-tls-verify",
 	}
 
@@ -264,6 +264,16 @@ func (v *Validator) ValidateCommand(command, commandType string) error {
 
 // validateGlobalFlags rejects commands that contain flags which can redirect API traffic
 // or inject credentials, regardless of access level.
+//
+// The check operates on the same argv the executor will see: the command is
+// tokenized with shlex (matching `pkg/command/command.go`), then each token
+// is normalized to its canonical flag name (everything before the first `=`,
+// lowercased) and compared to the blocked set. This closes the family of
+// "tokenizer divergence" bypasses where the validator's raw-string scan and
+// the executor's shlex tokenization disagree -- whitespace (tab/CR/LF),
+// in-word quotes (`--server"="X`, `--ser"ver"=X`), and backslash escapes
+// (`--server\=X`) all reduce to the same canonical flag token after shlex
+// rejoins the pieces, so each variant is now caught.
 func (v *Validator) validateGlobalFlags(command, commandType string) error {
 	var blockedFlags []string
 	switch commandType {
@@ -275,15 +285,29 @@ func (v *Validator) validateGlobalFlags(command, commandType string) error {
 		return nil
 	}
 
-	// Normalize all shell whitespace (tab/CR/LF/space) to a single space so the
-	// substring scan matches the executor's shlex tokenization, which treats
-	// " \t\r\n" as argument separators. Without this, payloads like
-	// "--server\thttps://attacker" bypass the literal "--server " check while
-	// still reaching exec as the flag/value pair kubectl honors.
-	cmdLower := globalFlagWhitespace.ReplaceAllString(strings.ToLower(command), " ")
-	for _, flag := range blockedFlags {
-		if strings.Contains(cmdLower, strings.ToLower(flag)) {
-			return &ValidationError{Message: "Error: Global flag '" + flag + "' is not allowed; it can redirect API traffic or inject credentials"}
+	blocked := make(map[string]struct{}, len(blockedFlags))
+	for _, f := range blockedFlags {
+		blocked[strings.ToLower(f)] = struct{}{}
+	}
+
+	tokens := tokenizeCommand(command)
+	for _, t := range tokens {
+		// Inspect only flag-shaped tokens. Positional args like resource
+		// names cannot turn into a flag once shlex has split them out.
+		if !strings.HasPrefix(t, "--") {
+			continue
+		}
+		// Canonical name = everything before the first '=' (kubectl/helm
+		// long flags use the `--flag=value` form). Bare booleans like
+		// `--insecure-skip-tls-verify` have no '=', so the whole token is
+		// the canonical name.
+		name := t
+		if i := strings.Index(t, "="); i >= 0 {
+			name = t[:i]
+		}
+		name = strings.ToLower(name)
+		if _, bad := blocked[name]; bad {
+			return &ValidationError{Message: "Error: Global flag '" + name + "' is not allowed; it can redirect API traffic or inject credentials"}
 		}
 	}
 	return nil

