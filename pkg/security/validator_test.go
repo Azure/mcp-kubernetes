@@ -351,6 +351,60 @@ func TestValidateGlobalFlags(t *testing.T) {
 	}
 }
 
+// TestOperationFlagValueBypass covers the MSRC report where a value-taking
+// global flag written in the separated `--flag value` form consumes a read
+// verb as its value, tricking the operation extractor into classifying the
+// command as read while kubectl/helm actually run the trailing mutating verb.
+// e.g. `--cache-dir get delete pods --all`: kubectl parses `--cache-dir=get`
+// (a harmless cache path) and runs `delete pods --all`.
+func TestOperationFlagValueBypass(t *testing.T) {
+	secConfig := NewSecurityConfig() // default: readonly, no namespace allowlist
+	validator := NewValidator(secConfig)
+
+	tests := []struct {
+		name        string
+		command     string
+		commandType string
+		shouldErr   bool
+	}{
+		// The core bypass payloads from the report — must be blocked.
+		{"cache-dir value hides delete", "--cache-dir get delete pods --all", CommandTypeKubectl, true},
+		{"cache-dir value hides exec", "--cache-dir get exec -n default mypod -- sh -c id", CommandTypeKubectl, true},
+		{"cache-dir value hides apply", "--cache-dir get apply -f crb.yaml", CommandTypeKubectl, true},
+		{"kubectl prefix + cache-dir hides delete", "kubectl --cache-dir get delete pods --all", CommandTypeKubectl, true},
+		// Other value-taking flags used to smuggle a read verb.
+		{"request-timeout value hides delete", "--request-timeout get delete pods", CommandTypeKubectl, true},
+		{"cluster value hides create", "--cluster get create deployment nginx --image=nginx", CommandTypeKubectl, true},
+		{"user value hides patch", "--user get patch pod mypod -p x", CommandTypeKubectl, true},
+		{"v value hides delete", "--v get delete pods", CommandTypeKubectl, true},
+		{"tls-server-name hides scale", "--tls-server-name get scale deploy nginx --replicas=0", CommandTypeKubectl, true},
+		// helm equivalents.
+		{"helm registry-config hides nothing-read still ok", "--registry-config list list", CommandTypeHelm, false},
+
+		// Legitimate commands using value-taking flags before a read verb must
+		// still be allowed (the value is consumed, the real verb is read).
+		{"cache-dir before get allowed", "--cache-dir /tmp/c get pods", CommandTypeKubectl, false},
+		{"kubectl cache-dir before get allowed", "kubectl --cache-dir /tmp/c get pods -n default", CommandTypeKubectl, false},
+		{"request-timeout before get allowed", "--request-timeout 30s get pods", CommandTypeKubectl, false},
+		{"inline flag=value before get allowed", "--cache-dir=/tmp/c get pods", CommandTypeKubectl, false},
+		// A boolean global flag does NOT consume the next token: the token
+		// after it is a real verb and must still be classified.
+		{"boolean flag then delete blocked", "--insecure-skip-tls-verify delete pods", CommandTypeKubectl, true},
+		{"boolean flag then get allowed", "--insecure-skip-tls-verify get pods", CommandTypeKubectl, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tc.command, tc.commandType)
+			if tc.shouldErr && err == nil {
+				t.Errorf("ValidateCommand(%q) should have been blocked", tc.command)
+			} else if !tc.shouldErr && err != nil {
+				t.Errorf("ValidateCommand(%q) should have been allowed, got: %v", tc.command, err)
+			}
+		})
+	}
+}
+
 func TestValidateGlobalFlagsAllAccessLevels(t *testing.T) {
 	// Blocked global flags must be rejected regardless of access level
 	accessLevels := []AccessLevel{AccessLevelReadOnly, AccessLevelReadWrite, AccessLevelAdmin}
