@@ -146,6 +146,70 @@ var (
 		"prioritylevelconfiguration": true, "prioritylevelconfigurations": true,
 	}
 
+	// kubectlValueTakingGlobalFlags are kubectl global (persistent) flags that
+	// consume the following argv token as their value when written in the
+	// separated `--flag value` form (as opposed to `--flag=value`). kubectl
+	// parses these before the operation verb, so the value they consume can be
+	// any string -- including a read verb like "get". If the operation
+	// extractor does not skip that consumed value, an attacker can place e.g.
+	// `--cache-dir get delete pods --all` and make the validator classify the
+	// command as a harmless "get" while kubectl actually runs "delete".
+	//
+	// Only the canonical long-flag spellings and the short aliases that take a
+	// value are listed. Boolean global flags (--insecure-skip-tls-verify,
+	// --match-server-version, --warnings-as-errors) are intentionally absent:
+	// they do not consume the next token, so the token after them is a real
+	// positional and must still be inspected as the operation verb.
+	kubectlValueTakingGlobalFlags = map[string]bool{
+		"--cache-dir":             true,
+		"--certificate-authority": true,
+		"--client-certificate":    true,
+		"--client-key":            true,
+		"--cluster":               true,
+		"--context":               true,
+		"--kubeconfig":            true,
+		"--namespace":             true,
+		"-n":                      true,
+		"--password":              true,
+		"--request-timeout":       true,
+		"--server":                true,
+		"-s":                      true,
+		"--tls-server-name":       true,
+		"--token":                 true,
+		"--user":                  true,
+		"--username":              true,
+		"--as":                    true,
+		"--as-group":              true,
+		"--as-uid":                true,
+		"--log-flush-frequency":   true,
+		"--profile":               true,
+		"--profile-output":        true,
+		"-v":                      true,
+		"--v":                     true,
+		"--vmodule":               true,
+	}
+
+	// helmValueTakingGlobalFlags mirror kubectlValueTakingGlobalFlags for helm.
+	// These are helm persistent flags that consume the next argv token when
+	// written in the separated `--flag value` form.
+	helmValueTakingGlobalFlags = map[string]bool{
+		"--burst-limit":          true,
+		"--kube-apiserver":       true,
+		"--kube-as-group":        true,
+		"--kube-as-user":         true,
+		"--kube-ca-file":         true,
+		"--kube-context":         true,
+		"--kube-token":           true,
+		"--kube-tls-server-name": true,
+		"--kubeconfig":           true,
+		"--namespace":            true,
+		"-n":                     true,
+		"--qps":                  true,
+		"--registry-config":      true,
+		"--repository-cache":     true,
+		"--repository-config":    true,
+	}
+
 	// helmNamespaceExemptOperations mirror kubectlNamespaceExemptOperations
 	// for helm. helm's namespaced commands (list/status/get/install/...) all
 	// honor -n, but the entries below operate on local config / repo state.
@@ -603,11 +667,38 @@ func (v *Validator) extractOperationFromCommand(command, commandType string) str
 	return extractOperationFromTokens(splitArgsAtDoubleDash(tokenizeCommand(command)), commandType)
 }
 
+// valueTakingGlobalFlags returns the set of global flags that consume the
+// following argv token as their value for the given command type.
+func valueTakingGlobalFlags(commandType string) map[string]bool {
+	switch commandType {
+	case CommandTypeKubectl:
+		return kubectlValueTakingGlobalFlags
+	case CommandTypeHelm:
+		return helmValueTakingGlobalFlags
+	default:
+		return nil
+	}
+}
+
 // extractOperationFromTokens returns the first positional token after the
 // command name (skipping flags). For "kubectl get pods -n x" -> "get".
+//
+// A value-taking global flag written in the separated `--flag value` form
+// consumes the following token as its value; kubectl/helm parse these before
+// the operation verb, so the consumed token is NOT the operation. We must skip
+// it, otherwise a payload like `--cache-dir get delete pods --all` would make
+// this function return the flag value ("get") instead of the real verb
+// ("delete"), bypassing access-level enforcement.
 func extractOperationFromTokens(tokens []string, commandType string) string {
-	for _, part := range tokens {
+	valueFlags := valueTakingGlobalFlags(commandType)
+	for i := 0; i < len(tokens); i++ {
+		part := tokens[i]
 		if strings.HasPrefix(part, "-") {
+			// `--flag=value` carries its value inline; nothing to skip.
+			// `--flag value` consumes the next token, so skip it.
+			if !strings.Contains(part, "=") && valueFlags[part] && i+1 < len(tokens) {
+				i++
+			}
 			continue
 		}
 		if part == commandType {
