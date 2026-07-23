@@ -33,8 +33,8 @@ type ConfigData struct {
 	// Loopback names and the configured --host are always trusted.
 	AllowHosts string
 	// Origin header values to trust for HTTP transports (comma-separated).
-	// When an Origin header is present it must match one of these; browser
-	// origins are rejected by default to defend against DNS-rebinding.
+	// Loopback origins are always trusted; any other present Origin header is
+	// rejected by default to defend against DNS-rebinding.
 	AllowOrigins string
 
 	// OTLP endpoint for OpenTelemetry traces
@@ -81,10 +81,11 @@ func (cfg *ConfigData) ParseFlags() error {
 	// HTTP transport hardening (sse / streamable-http only)
 	flag.StringVar(&cfg.AllowHosts, "allow-hosts", "",
 		"Comma-separated list of additional Host header values to trust for HTTP transports. "+
-			"Loopback hosts and the configured --host are always trusted. Supports '*' wildcard to disable the check.")
+			"Loopback hosts and the configured --host (unless it is a 0.0.0.0/:: wildcard) are always trusted. "+
+			"Supports '*' wildcard to disable the check.")
 	flag.StringVar(&cfg.AllowOrigins, "allow-origins", "",
 		"Comma-separated list of Origin header values to trust for HTTP transports. "+
-			"Requests carrying any other Origin header are rejected to defend against DNS-rebinding. "+
+			"Loopback origins are always trusted; any other Origin header is rejected to defend against DNS-rebinding. "+
 			"Supports '*' wildcard to disable the check.")
 
 	// OTLP settings

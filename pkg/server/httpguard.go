@@ -22,9 +22,9 @@ import (
 //
 //  1. Host allow-list. The request Host must be a loopback name, the configured
 //     bind host, or an explicitly allowed host.
-//  2. Origin allow-list. If an Origin header is present it must be explicitly
-//     allowed. A browser always sends Origin on cross-origin requests, so a
-//     rebinding page is rejected here.
+//  2. Origin allow-list. If an Origin header is present it must be a loopback
+//     origin or an explicitly allowed origin. A browser always sends Origin on
+//     cross-origin requests, so a non-loopback rebinding page is rejected here.
 type hostOriginGuard struct {
 	next           http.Handler
 	allowedHosts   map[string]struct{}
@@ -47,7 +47,10 @@ func newHostOriginGuard(next http.Handler, bindHost, extraHosts, allowedOrigins 
 	for _, h := range []string{"localhost", "127.0.0.1", "::1", "[::1]"} {
 		g.allowedHosts[h] = struct{}{}
 	}
-	if h := normalizeHost(bindHost); h != "" {
+	// Trust the configured bind host, unless it is a wildcard address
+	// (0.0.0.0 / ::) which never appears as a client Host header — operators
+	// must list real hostnames via --allow-hosts in that case.
+	if h := normalizeHost(bindHost); h != "" && !isWildcardBindHost(h) {
 		g.allowedHosts[h] = struct{}{}
 	}
 	for _, h := range splitList(extraHosts) {
@@ -55,7 +58,9 @@ func newHostOriginGuard(next http.Handler, bindHost, extraHosts, allowedOrigins 
 			g.allowAnyHost = true
 			continue
 		}
-		g.allowedHosts[normalizeHost(h)] = struct{}{}
+		if nh := normalizeHost(h); nh != "" {
+			g.allowedHosts[nh] = struct{}{}
+		}
 	}
 
 	for _, o := range splitList(allowedOrigins) {
@@ -118,6 +123,16 @@ func normalizeHost(host string) string {
 		host = h
 	}
 	return strings.Trim(host, "[]")
+}
+
+// isWildcardBindHost reports whether host is an unspecified/wildcard bind
+// address (0.0.0.0 or ::). Such an address is never sent as a client Host
+// header, so it should not be added to the Host allow-list.
+func isWildcardBindHost(host string) bool {
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.IsUnspecified()
+	}
+	return false
 }
 
 func isLoopbackHost(host string) bool {

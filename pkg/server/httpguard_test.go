@@ -116,3 +116,30 @@ func TestHostOriginGuard_NoOriginHeaderAllowedForLoopback(t *testing.T) {
 		t.Fatalf("expected request without Origin to be allowed, got %d", rr.Code)
 	}
 }
+
+func TestHostOriginGuard_WildcardBindHostNotTrusted(t *testing.T) {
+	// Binding to 0.0.0.0/:: must not add the wildcard literal to the allow-list;
+	// a request whose Host is the wildcard literal is meaningless and rejected,
+	// while loopback still works.
+	for _, bind := range []string{"0.0.0.0", "::"} {
+		g := newTestGuard(bind, "", "")
+		if rr := doRequest(g, bind+":8084", ""); rr.Code != http.StatusForbidden {
+			t.Fatalf("bind=%q: expected wildcard Host to be forbidden, got %d", bind, rr.Code)
+		}
+		if rr := doRequest(g, "127.0.0.1:8084", ""); rr.Code != http.StatusOK {
+			t.Fatalf("bind=%q: expected loopback Host to still be allowed, got %d", bind, rr.Code)
+		}
+	}
+}
+
+func TestHostOriginGuard_MalformedAllowHostIgnored(t *testing.T) {
+	// A malformed --allow-hosts entry like ":8080" normalizes to "" and must
+	// not be added to the allow-list (which would let an empty Host through).
+	g := newTestGuard("127.0.0.1", ":8080", "")
+	if rr := doRequest(g, "", ""); rr.Code != http.StatusForbidden {
+		t.Fatalf("expected empty Host to be forbidden, got %d", rr.Code)
+	}
+	if rr := doRequest(g, "attacker.example:8080", ""); rr.Code != http.StatusForbidden {
+		t.Fatalf("expected attacker Host to be forbidden, got %d", rr.Code)
+	}
+}
