@@ -3,6 +3,8 @@ package server
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"time"
 
 	"github.com/Azure/mcp-kubernetes/pkg/cilium"
 	"github.com/Azure/mcp-kubernetes/pkg/config"
@@ -75,15 +77,29 @@ func (s *Service) Run() error {
 		sse := server.NewSSEServer(s.mcpServer)
 		addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 		log.Printf("SSE server listening on %s", addr)
-		return sse.Start(addr)
+		return s.serveHTTP(addr, sse)
 	case "streamable-http":
 		streamableServer := server.NewStreamableHTTPServer(s.mcpServer)
 		addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 		log.Printf("Streamable HTTP server listening on %s", addr)
-		return streamableServer.Start(addr)
+		return s.serveHTTP(addr, streamableServer)
 	default:
 		return fmt.Errorf("invalid transport type: %s (must be 'stdio', 'sse' or 'streamable-http')", s.cfg.Transport)
 	}
+}
+
+// serveHTTP wraps an MCP HTTP handler (streamable-http or sse) with the
+// Host/Origin guard and serves it. Guarding at the http.Handler layer ensures
+// attacker-origin requests are rejected before any MCP session handling,
+// defending against browser-origin DNS-rebinding attacks.
+func (s *Service) serveHTTP(addr string, handler http.Handler) error {
+	guarded := newHostOriginGuard(handler, s.cfg.Host, s.cfg.AllowHosts, s.cfg.AllowOrigins)
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           guarded,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	return httpServer.ListenAndServe()
 }
 
 // registerKubectlCommands registers kubectl tools based on access level
