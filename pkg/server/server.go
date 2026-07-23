@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/Azure/mcp-kubernetes/pkg/cilium"
 	"github.com/Azure/mcp-kubernetes/pkg/config"
@@ -94,8 +95,9 @@ func (s *Service) Run() error {
 func (s *Service) serveHTTP(addr string, handler http.Handler) error {
 	guarded := newHostOriginGuard(handler, s.cfg.Host, s.cfg.AllowHosts, s.cfg.AllowOrigins)
 	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: guarded,
+		Addr:              addr,
+		Handler:           guarded,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return httpServer.ListenAndServe()
 }
