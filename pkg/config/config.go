@@ -29,6 +29,14 @@ type ConfigData struct {
 	AccessLevel     string
 	AllowNamespaces string
 
+	// Additional Host header values to trust for HTTP transports (comma-separated).
+	// Loopback names and the configured --host are always trusted.
+	AllowHosts string
+	// Origin header values to trust for HTTP transports (comma-separated).
+	// When an Origin header is present it must match one of these; browser
+	// origins are rejected by default to defend against DNS-rebinding.
+	AllowOrigins string
+
 	// OTLP endpoint for OpenTelemetry traces
 	OTLPEndpoint string
 
@@ -69,6 +77,15 @@ func (cfg *ConfigData) ParseFlags() error {
 	flag.StringVar(&cfg.AccessLevel, "access-level", "readonly", "Access level (readonly, readwrite, or admin)")
 	flag.StringVar(&cfg.AllowNamespaces, "allow-namespaces", "",
 		"Comma-separated list of namespaces to allow (empty means all allowed)")
+
+	// HTTP transport hardening (sse / streamable-http only)
+	flag.StringVar(&cfg.AllowHosts, "allow-hosts", "",
+		"Comma-separated list of additional Host header values to trust for HTTP transports. "+
+			"Loopback hosts and the configured --host are always trusted. Supports '*' wildcard to disable the check.")
+	flag.StringVar(&cfg.AllowOrigins, "allow-origins", "",
+		"Comma-separated list of Origin header values to trust for HTTP transports. "+
+			"Requests carrying any other Origin header are rejected to defend against DNS-rebinding. "+
+			"Supports '*' wildcard to disable the check.")
 
 	// OTLP settings
 	flag.StringVar(&cfg.OTLPEndpoint, "otlp-endpoint", "", "OTLP endpoint for OpenTelemetry traces (e.g. localhost:4317, default \"\")")
