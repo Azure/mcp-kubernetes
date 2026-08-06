@@ -94,10 +94,6 @@ func TestNewConfig(t *testing.T) {
 		t.Errorf("Expected default transport 'stdio', got '%s'", cfg.Transport)
 	}
 
-	if cfg.Port != 8000 {
-		t.Errorf("Expected default port 8000, got %d", cfg.Port)
-	}
-
 	if cfg.AccessLevel != "readonly" {
 		t.Errorf("Expected default access level 'readonly', got '%s'", cfg.AccessLevel)
 	}
@@ -112,6 +108,24 @@ func TestNewConfig(t *testing.T) {
 
 	if cfg.SecurityConfig == nil {
 		t.Error("Expected SecurityConfig to be initialized")
+	}
+}
+
+func TestValidateTransport(t *testing.T) {
+	for _, tt := range []struct {
+		transport string
+		wantErr   bool
+	}{
+		{transport: "stdio"},
+		{transport: "sse", wantErr: true},
+		{transport: "streamable-http", wantErr: true},
+	} {
+		t.Run(tt.transport, func(t *testing.T) {
+			err := validateTransport(tt.transport)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateTransport(%q) error = %v, wantErr %v", tt.transport, err, tt.wantErr)
+			}
+		})
 	}
 }
 
