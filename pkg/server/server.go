@@ -3,8 +3,6 @@ package server
 import (
 	"fmt"
 	"log"
-	"net/http"
-	"time"
 
 	"github.com/Azure/mcp-kubernetes/pkg/cilium"
 	"github.com/Azure/mcp-kubernetes/pkg/config"
@@ -64,42 +62,16 @@ func (s *Service) Initialize() error {
 	return nil
 }
 
-// Run starts the service with the specified transport
+// Run starts the stdio service.
 func (s *Service) Run() error {
 	log.Println("MCP Kubernetes version:", version.GetVersion())
 
-	// Start the server
-	switch s.cfg.Transport {
-	case "stdio":
-		log.Println("Listening for requests on STDIO...")
-		return server.ServeStdio(s.mcpServer)
-	case "sse":
-		sse := server.NewSSEServer(s.mcpServer)
-		addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
-		log.Printf("SSE server listening on %s", addr)
-		return s.serveHTTP(addr, sse)
-	case "streamable-http":
-		streamableServer := server.NewStreamableHTTPServer(s.mcpServer)
-		addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
-		log.Printf("Streamable HTTP server listening on %s", addr)
-		return s.serveHTTP(addr, streamableServer)
-	default:
-		return fmt.Errorf("invalid transport type: %s (must be 'stdio', 'sse' or 'streamable-http')", s.cfg.Transport)
+	if s.cfg.Transport != "stdio" {
+		return fmt.Errorf("unsupported transport %q: only stdio is supported", s.cfg.Transport)
 	}
-}
 
-// serveHTTP wraps an MCP HTTP handler (streamable-http or sse) with the
-// Host/Origin guard and serves it. Guarding at the http.Handler layer ensures
-// attacker-origin requests are rejected before any MCP session handling,
-// defending against browser-origin DNS-rebinding attacks.
-func (s *Service) serveHTTP(addr string, handler http.Handler) error {
-	guarded := newHostOriginGuard(handler, s.cfg.Host, s.cfg.AllowHosts, s.cfg.AllowOrigins)
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           guarded,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	return httpServer.ListenAndServe()
+	log.Println("Listening for requests on STDIO...")
+	return server.ServeStdio(s.mcpServer)
 }
 
 // registerKubectlCommands registers kubectl tools based on access level

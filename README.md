@@ -98,11 +98,9 @@ Usage of ./mcp-kubernetes:
       --access-level string       Access level (readonly, readwrite, or admin) (default "readonly")
       --additional-tools string   Comma-separated list of additional tools to support (kubectl is always enabled). Available: helm,cilium,hubble
       --allow-namespaces string   Comma-separated list of namespaces to allow (empty means all allowed)
-      --host string               Host to listen for the server (only used with transport sse or streamable-http) (default "127.0.0.1")
       --otlp-endpoint string      OTLP endpoint for OpenTelemetry traces (e.g. localhost:4317, default "")
-      --port int                  Port to listen for the server (only used with transport sse or streamable-http) (default 8000)
       --timeout int               Timeout for command execution in seconds, default is 60s (default 60)
-      --transport string          Transport mechanism to use (stdio, sse or streamable-http) (default "stdio")
+      --transport string          Transport mechanism to use (stdio only) (default "stdio")
 ```
 
 ### Unified vs Legacy Tools

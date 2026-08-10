@@ -24,18 +24,8 @@ type ConfigData struct {
 
 	// Command-line specific options
 	Transport       string
-	Host            string
-	Port            int
 	AccessLevel     string
 	AllowNamespaces string
-
-	// Additional Host header values to trust for HTTP transports (comma-separated).
-	// Loopback names and the configured --host are always trusted.
-	AllowHosts string
-	// Origin header values to trust for HTTP transports (comma-separated).
-	// Loopback origins are always trusted; any other present Origin header is
-	// rejected by default to defend against DNS-rebinding.
-	AllowOrigins string
 
 	// OTLP endpoint for OpenTelemetry traces
 	OTLPEndpoint string
@@ -54,7 +44,6 @@ func NewConfig() *ConfigData {
 		Timeout:         60,
 		SecurityConfig:  security.NewSecurityConfig(),
 		Transport:       "stdio",
-		Port:            8000,
 		AccessLevel:     "readonly",
 		AllowNamespaces: "",
 		UseLegacyTools:  false,
@@ -64,9 +53,7 @@ func NewConfig() *ConfigData {
 // ParseFlags parses command line arguments and updates the configuration
 func (cfg *ConfigData) ParseFlags() error {
 	// Server configuration
-	flag.StringVar(&cfg.Transport, "transport", "stdio", "Transport mechanism to use (stdio, sse or streamable-http)")
-	flag.StringVar(&cfg.Host, "host", "127.0.0.1", "Host to listen for the server (only used with transport sse or streamable-http)")
-	flag.IntVar(&cfg.Port, "port", 8000, "Port to listen for the server (only used with transport sse or streamable-http)")
+	flag.StringVar(&cfg.Transport, "transport", "stdio", "Transport mechanism to use (stdio only)")
 	flag.IntVar(&cfg.Timeout, "timeout", 60, "Timeout for command execution in seconds, default is 60s")
 
 	// Tools configuration
@@ -77,16 +64,6 @@ func (cfg *ConfigData) ParseFlags() error {
 	flag.StringVar(&cfg.AccessLevel, "access-level", "readonly", "Access level (readonly, readwrite, or admin)")
 	flag.StringVar(&cfg.AllowNamespaces, "allow-namespaces", "",
 		"Comma-separated list of namespaces to allow (empty means all allowed)")
-
-	// HTTP transport hardening (sse / streamable-http only)
-	flag.StringVar(&cfg.AllowHosts, "allow-hosts", "",
-		"Comma-separated list of additional Host header values to trust for HTTP transports. "+
-			"Loopback hosts and the configured --host (unless it is a 0.0.0.0/:: wildcard) are always trusted. "+
-			"Supports '*' wildcard to disable the check.")
-	flag.StringVar(&cfg.AllowOrigins, "allow-origins", "",
-		"Comma-separated list of Origin header values to trust for HTTP transports. "+
-			"Loopback origins are always trusted; any other Origin header is rejected to defend against DNS-rebinding. "+
-			"Supports '*' wildcard to disable the check.")
 
 	// OTLP settings
 	flag.StringVar(&cfg.OTLPEndpoint, "otlp-endpoint", "", "OTLP endpoint for OpenTelemetry traces (e.g. localhost:4317, default \"\")")
@@ -100,6 +77,10 @@ func (cfg *ConfigData) ParseFlags() error {
 	if *showVersion {
 		version.PrintVersion()
 		os.Exit(0)
+	}
+
+	if err := validateTransport(cfg.Transport); err != nil {
+		return err
 	}
 
 	// Update security config with access level
@@ -134,6 +115,13 @@ func (cfg *ConfigData) ParseFlags() error {
 		}
 	}
 
+	return nil
+}
+
+func validateTransport(transport string) error {
+	if transport != "stdio" {
+		return fmt.Errorf("unsupported transport %q: only stdio is supported", transport)
+	}
 	return nil
 }
 
