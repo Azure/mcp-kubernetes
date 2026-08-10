@@ -119,6 +119,8 @@ func TestValidateTransport(t *testing.T) {
 		{transport: "stdio"},
 		{transport: "sse", wantErr: true},
 		{transport: "streamable-http", wantErr: true},
+		{transport: "", wantErr: true},
+		{transport: "invalid", wantErr: true},
 	} {
 		t.Run(tt.transport, func(t *testing.T) {
 			err := validateTransport(tt.transport)
