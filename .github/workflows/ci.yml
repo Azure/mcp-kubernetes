@@ -107,6 +107,9 @@ jobs:
         run: |
           go build -v -o mcp-kubernetes ./cmd/mcp-kubernetes
 
+      - name: Check binary
+        run: ./mcp-kubernetes --version
+
 
   security:
     name: Security Scan

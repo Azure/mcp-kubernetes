@@ -15,6 +15,8 @@ It allows AI tools to:
 
 ## How to install
 
+Container images are no longer produced or supported. Install a released binary locally and configure your MCP client to run it as a stdio subprocess.
+
 ### Local
 
 <details>
