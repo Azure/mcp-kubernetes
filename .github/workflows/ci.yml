@@ -107,13 +107,9 @@ jobs:
         run: |
           go build -v -o mcp-kubernetes ./cmd/mcp-kubernetes
 
-      - name: Build Docker image
-        run: docker build -t mcp-kubernetes:test --build-arg VERSION=${{ needs.args.outputs.version }} --build-arg GIT_COMMIT=${{ needs.args.outputs.commit }} --build-arg BUILD_DATE=${{ needs.args.outputs.commit-date }} --build-arg GIT_TREE_STATE=${{ needs.args.outputs.tree-state }} .
+      - name: Check binary
+        run: ./mcp-kubernetes --version
 
-      - name: Check Docker image
-        run: |
-          docker images mcp-kubernetes:test
-          docker run --rm mcp-kubernetes:test --version || true
 
   security:
     name: Security Scan

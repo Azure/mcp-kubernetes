@@ -15,27 +15,7 @@ It allows AI tools to:
 
 ## How to install
 
-### Docker
-
-Get your kubeconfig file for your Kubernetes cluster and setup in the mcpServers (replace src path with your kubeconfig path):
-
-```json
-{
-  "mcpServers": {
-    "kubernetes": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "--mount",
-        "type=bind,src=/home/username/.kube/config,dst=/home/mcp/.kube/config",
-        "ghcr.io/azure/mcp-kubernetes"
-      ]
-    }
-  }
-}
-```
+Container images are no longer produced or supported. Install a released binary locally and configure your MCP client to run it as a stdio subprocess.
 
 ### Local
 
