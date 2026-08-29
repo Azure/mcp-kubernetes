@@ -31,3 +31,5 @@ updates:
         - "patch"
         - "minor"
         - "major"
+    cooldown:
+      default-days: 7
