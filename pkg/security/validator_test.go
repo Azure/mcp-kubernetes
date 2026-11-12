@@ -671,7 +671,7 @@ func TestClusterScopedResourcesAllowedWithoutNamespace(t *testing.T) {
 		"kubectl get priorityclasses",
 		"kubectl top nodes",
 		"kubectl describe node node1",
-		"kubectl get nodes,pv",          // multi-type, all cluster-scoped
+		"kubectl get nodes,pv",         // multi-type, all cluster-scoped
 		"kubectl get clusterrole/admin", // resource/name on cluster-scoped type
 	}
 	for _, c := range allowed {
@@ -682,16 +682,16 @@ func TestClusterScopedResourcesAllowedWithoutNamespace(t *testing.T) {
 
 	// Mixed cluster-scoped + namespaced resources are NOT exempt.
 	blocked := []string{
-		"kubectl get nodes,pods",         // mixed via comma
-		"kubectl get node/n1 pod/p1",     // mixed via multiple resource/name positionals
-		"kubectl get pods",               // namespaced
-		"kubectl describe pod mypod",     // namespaced
-		"kubectl get pod/mypod",          // namespaced via resource/name
-		"kubectl get widget/foo",         // unknown type -> assume namespaced
-		"kubectl auth can-i get pods",    // verb arg, not a resource
-		"kubectl logs mypod",             // logs always targets a pod (namespaced)
-		"kubectl label node node1 env=x", // mutation verbs are not in the exempt verb set
-		"kubectl delete node node1",      // mutation verbs are not in the exempt verb set
+		"kubectl get nodes,pods",          // mixed via comma
+		"kubectl get node/n1 pod/p1",      // mixed via multiple resource/name positionals
+		"kubectl get pods",                // namespaced
+		"kubectl describe pod mypod",      // namespaced
+		"kubectl get pod/mypod",           // namespaced via resource/name
+		"kubectl get widget/foo",          // unknown type -> assume namespaced
+		"kubectl auth can-i get pods",     // verb arg, not a resource
+		"kubectl logs mypod",              // logs always targets a pod (namespaced)
+		"kubectl label node node1 env=x",  // mutation verbs are not in the exempt verb set
+		"kubectl delete node node1",       // mutation verbs are not in the exempt verb set
 	}
 	for _, c := range blocked {
 		if err := validator.ValidateCommand(c, CommandTypeKubectl); err == nil {
