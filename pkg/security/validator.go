@@ -22,10 +22,11 @@ var (
 	// Entries are canonical flag names (without "=" or trailing space). Validation
 	// tokenizes the command with shlex (matching the executor) and checks each
 	// argv token against this set, so quoting / whitespace variants
-	// (`--server"="X`, `--server\tX`, `--ser"ver"=X`, `--server\=X`) all reduce to
-	// the same canonical token and are rejected.
+	// (`--server"="X`, `--server\tX`, `--ser"ver"=X`, `--server\=X`) and
+	// kubectl's `-s` shorthand all reduce to blocked flag tokens.
 	KubectlBlockedGlobalFlags = []string{
 		"--server",
+		"-s",
 		"--token",
 		"--kubeconfig",
 		"--context",
@@ -358,18 +359,20 @@ func (v *Validator) validateGlobalFlags(command, commandType string) error {
 	for _, t := range tokens {
 		// Inspect only flag-shaped tokens. Positional args like resource
 		// names cannot turn into a flag once shlex has split them out.
-		if !strings.HasPrefix(t, "--") {
+		if !strings.HasPrefix(t, "-") {
 			continue
 		}
-		// Canonical name = everything before the first '=' (kubectl/helm
-		// long flags use the `--flag=value` form). Bare booleans like
-		// `--insecure-skip-tls-verify` have no '=', so the whole token is
-		// the canonical name.
+		// Canonical name = everything before the first '='. kubectl accepts
+		// both `-s value` and compact `-svalue` forms for its server shorthand,
+		// so normalize every single-dash `-s` spelling before looking it up.
 		name := t
 		if i := strings.Index(t, "="); i >= 0 {
 			name = t[:i]
 		}
 		name = strings.ToLower(name)
+		if strings.HasPrefix(name, "-s") && !strings.HasPrefix(name, "--") {
+			name = "-s"
+		}
 		if _, bad := blocked[name]; bad {
 			return &ValidationError{Message: "Error: Global flag '" + name + "' is not allowed; it can redirect API traffic or inject credentials"}
 		}
